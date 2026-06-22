@@ -1,11 +1,18 @@
 # -*- coding: utf-8 -*-
 import random
+import uuid
+
 import streamlit as st
 import pandas as pd
+
 from data import QUESTIONS, TYPE_MAP, PRINCIPLES
 from scoring import compute_scores, build_report
+from backend import build_submission_row, save_submission
 
 st.set_page_config(page_title="神性论人格王国底盘测评 v0.3", page_icon="👑", layout="wide")
+
+if "submission_id" not in st.session_state:
+    st.session_state["submission_id"] = str(uuid.uuid4())
 
 st.title("神性论人格王国底盘测评 v0.3")
 st.caption("人格结构研究与自我理解工具｜非医学、非心理诊断")
@@ -25,6 +32,8 @@ with st.expander("测评说明", expanded=True):
 
 低位不是能力低，而是君主秩序正在建立，类似秦。  
 高位不是更激烈，而是君主已经坐稳，王国开始解释自身秩序，类似汉。
+
+生成结果时，系统会默认记录本次答卷与计算结果，用于后续题库校准和模型改进。后台记录包含题目答案、各位次分数、最终结果、风险提示和可选 MBTI 对照；本页面不要求填写姓名、电话或联系方式。
 """)
 
 randomize = st.toggle("随机打乱每部分内部题目顺序", value=False)
@@ -94,9 +103,26 @@ if st.button("生成测评结果", type="primary"):
     result = compute_scores(answers)
     report = build_report(result)
 
+    submission_row = build_submission_row(
+        answers=answers,
+        result=result,
+        mbti_past=mbti_past,
+        mbti_self=mbti_self,
+        submission_id=st.session_state["submission_id"],
+    )
+    save_status = save_submission(submission_row)
+
     st.divider()
     st.header(f"{result['level']} {result['top_type']}")
     st.markdown(report)
+
+    if save_status["ok"]:
+        if save_status["backend"] == "google_sheets":
+            st.caption("后台记录完成。")
+        else:
+            st.caption("后台记录已写入本地临时文件。正式收集样本时，请在 Streamlit Secrets 中配置 Google Sheets 持久化后台。")
+    else:
+        st.warning(f"结果已生成，但后台记录失败：{save_status['message']}")
 
     if result["risks"]:
         st.subheader("附加提示")
