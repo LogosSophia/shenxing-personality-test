@@ -9,14 +9,14 @@ from data import QUESTIONS, TYPE_MAP, PRINCIPLES
 from scoring import compute_scores, build_report
 from backend import build_submission_row, save_submission
 
-st.set_page_config(page_title="神性论人格王国底盘测评 v0.3", page_icon="👑", layout="wide")
+st.set_page_config(page_title="神性论人格王国底盘测评 v0.4", page_icon="👑", layout="wide")
 
 if "submission_id" not in st.session_state:
     st.session_state["submission_id"] = str(uuid.uuid4())
 if "shuffle_seed" not in st.session_state:
     st.session_state["shuffle_seed"] = str(uuid.uuid4())
 
-st.title("神性论人格王国底盘测评 v0.3")
+st.title("神性论人格王国底盘测评 v0.4")
 st.caption("人格结构研究与自我理解工具｜非医学、非心理诊断")
 
 with st.expander("测评说明", expanded=True):
@@ -50,7 +50,7 @@ for q in QUESTIONS:
 questions_by_section = {}
 for section in sections:
     section_items = [q for q in QUESTIONS if q["module"] == section]
-    rng = random.Random(f"shenxing-v03-{st.session_state['shuffle_seed']}-{section}")
+    rng = random.Random(f"shenxing-v04-{st.session_state['shuffle_seed']}-{section}")
     rng.shuffle(section_items)
     questions_by_section[section] = section_items
 
