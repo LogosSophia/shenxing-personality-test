@@ -63,7 +63,7 @@ tabs = st.tabs(sections)
 for tab, section in zip(tabs, sections):
     with tab:
         if section.startswith("第六部分"):
-            st.info("以下题目询问的是极端失望、愤怒、受压或被逼到尽头时的反应倾向，不代表你平时会这样，也不是道德评价。")
+            st.info("以下题目询问的是你曾经实际做过，或清晰、强烈地想做过的阴影处理方式。它不代表你道德上认同，也不代表你一定会实施，而是用于判断君主秩序被逼到极限时会调用哪一种元帅兵权。")
         for q in questions_by_section[section]:
             label = q["front_text"] if not show_ids else f"【{q['qid']}】{q['front_text']}"
             answers[q["qid"]] = st.radio(
