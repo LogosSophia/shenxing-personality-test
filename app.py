@@ -13,6 +13,8 @@ st.set_page_config(page_title="神性论人格王国底盘测评 v0.3", page_ico
 
 if "submission_id" not in st.session_state:
     st.session_state["submission_id"] = str(uuid.uuid4())
+if "shuffle_seed" not in st.session_state:
+    st.session_state["shuffle_seed"] = str(uuid.uuid4())
 
 st.title("神性论人格王国底盘测评 v0.3")
 st.caption("人格结构研究与自我理解工具｜非医学、非心理诊断")
@@ -36,10 +38,10 @@ with st.expander("测评说明", expanded=True):
 生成结果时，系统会默认记录本次答卷与计算结果，用于后续题库校准和模型改进。后台记录包含题目答案、各位次分数、最终结果、风险提示和可选 MBTI 对照；本页面不要求填写姓名、电话或联系方式。
 """)
 
-randomize = st.toggle("随机打乱每部分内部题目顺序", value=False)
-show_ids = st.toggle("显示题号", value=False)
+# 正式测评默认自动打乱每部分内部题目顺序，不提供用户开关。
+# 章节顺序保持固定，以免元帅说明等上下文被打散。
+show_ids = False
 
-# 固定分段顺序。若随机，只随机每个分段内部题目，避免标签页顺序被打乱。
 sections = []
 for q in QUESTIONS:
     if q["module"] not in sections:
@@ -48,14 +50,13 @@ for q in QUESTIONS:
 questions_by_section = {}
 for section in sections:
     section_items = [q for q in QUESTIONS if q["module"] == section]
-    if randomize:
-        rng = random.Random(f"shenxing-v03-{section}")
-        rng.shuffle(section_items)
+    rng = random.Random(f"shenxing-v03-{st.session_state['shuffle_seed']}-{section}")
+    rng.shuffle(section_items)
     questions_by_section[section] = section_items
 
 st.divider()
 st.subheader("开始作答")
-st.caption("所有题目均需作答。为避免默认值造成误判，本测评不会预先选择“3”。")
+st.caption("题目已自动打乱。所有题目均需作答。为避免默认值造成误判，本测评不会预先选择“3”。")
 
 answers = {}
 tabs = st.tabs(sections)
