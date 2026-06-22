@@ -27,34 +27,39 @@ with st.expander("测评说明", expanded=True):
 高位不是更激烈，而是君主已经坐稳，王国开始解释自身秩序，类似汉。
 """)
 
-randomize = st.toggle("随机打乱题目顺序", value=False)
+randomize = st.toggle("随机打乱每部分内部题目顺序", value=False)
 show_ids = st.toggle("显示题号", value=False)
 
-questions = QUESTIONS.copy()
-if randomize:
-    random.seed(42)
-    random.shuffle(questions)
-
-st.divider()
-st.subheader("开始作答")
-
-answers = {}
+# 固定分段顺序。若随机，只随机每个分段内部题目，避免标签页顺序被打乱。
 sections = []
-for q in questions:
+for q in QUESTIONS:
     if q["module"] not in sections:
         sections.append(q["module"])
 
+questions_by_section = {}
+for section in sections:
+    section_items = [q for q in QUESTIONS if q["module"] == section]
+    if randomize:
+        rng = random.Random(f"shenxing-v03-{section}")
+        rng.shuffle(section_items)
+    questions_by_section[section] = section_items
+
+st.divider()
+st.subheader("开始作答")
+st.caption("所有题目均需作答。为避免默认值造成误判，本测评不会预先选择“3”。")
+
+answers = {}
 tabs = st.tabs(sections)
 for tab, section in zip(tabs, sections):
     with tab:
         if section.startswith("第六部分"):
             st.info("以下题目询问的是极端失望、愤怒、受压或被逼到尽头时的反应倾向，不代表你平时会这样，也不是道德评价。")
-        for q in [x for x in questions if x["module"] == section]:
+        for q in questions_by_section[section]:
             label = q["front_text"] if not show_ids else f"【{q['qid']}】{q['front_text']}"
             answers[q["qid"]] = st.radio(
                 label,
                 options=[1, 2, 3, 4, 5],
-                index=2,
+                index=None,
                 horizontal=True,
                 key=q["qid"],
                 format_func=lambda x: {
@@ -66,6 +71,10 @@ for tab, section in zip(tabs, sections):
                 }[x],
             )
 
+answered_count = sum(1 for value in answers.values() if value is not None)
+total_count = len(QUESTIONS)
+st.progress(answered_count / total_count, text=f"已作答 {answered_count}/{total_count} 题")
+
 st.divider()
 st.subheader("非计分对照题")
 col1, col2 = st.columns(2)
@@ -75,6 +84,13 @@ with col2:
     mbti_self = st.text_input("你自认为最接近的 MBTI 类型是？", placeholder="例如 INTP")
 
 if st.button("生成测评结果", type="primary"):
+    missing = [q["qid"] for q in QUESTIONS if answers.get(q["qid"]) is None]
+    if missing:
+        st.error(f"还有 {len(missing)} 题未作答。请完成全部题目后再生成结果。")
+        with st.expander("查看未作答题号"):
+            st.write("、".join(missing))
+        st.stop()
+
     result = compute_scores(answers)
     report = build_report(result)
 
