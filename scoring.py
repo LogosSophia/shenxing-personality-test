@@ -140,9 +140,12 @@ def compute_scores(answers):
         marshal_score = marshal_raw[marshal]
         emperor_score = emperor_raw[emperor]
 
-        # 底盘分支：君主确定后，主要看宰相，其次看护卫；帝师不参与底盘，元帅也不区分同君主底盘。
-        branch_score = 0.78 * chancellor_score + 0.22 * guard_score
-        branch_score_centered = 0.78 * ch_c[chancellor] + 0.22 * guard_c[guard]
+        # 底盘分支：君主确定后，宰相必须先被锚定。
+        # 护卫只能轻微校正稳定方式，不能用护卫强行推出宰相；否则高位结构会被误判成相邻底盘。
+        chancellor_anchor = 0.65 * chancellor_score + 0.35 * core_positive[chancellor]
+        chancellor_anchor_centered = 0.65 * ch_c[chancellor] + 0.35 * cp_c[chancellor]
+        branch_score = 0.90 * chancellor_anchor + 0.10 * guard_score
+        branch_score_centered = 0.90 * chancellor_anchor_centered + 0.10 * guard_c[guard]
         branch_scores[t] = branch_score
         branch_scores_centered[t] = branch_score_centered
 
@@ -158,6 +161,8 @@ def compute_scores(answers):
             "monarch_marshal": marshal_raw[MARSHAL_BY_MONARCH[monarch]],
             "chancellor": chancellor_score,
             "chancellor_centered": ch_c[chancellor],
+            "chancellor_anchor": chancellor_anchor,
+            "chancellor_anchor_centered": chancellor_anchor_centered,
             "guard": guard_score,
             "guard_centered": guard_c[guard],
             "civilian": civilian_score,
