@@ -3,6 +3,7 @@ import random
 import uuid
 
 import streamlit as st
+import streamlit.components.v1 as components
 import pandas as pd
 
 from data import QUESTIONS, TYPE_MAP, PRINCIPLES
@@ -17,6 +18,8 @@ if "shuffle_seed" not in st.session_state:
     st.session_state["shuffle_seed"] = str(uuid.uuid4())
 if "current_section_index" not in st.session_state:
     st.session_state["current_section_index"] = 0
+if "scroll_to_questionnaire_top" not in st.session_state:
+    st.session_state["scroll_to_questionnaire_top"] = False
 
 st.title("神性论人格王国测评")
 st.caption("人格结构研究与自我理解工具｜非医学、非心理诊断")
@@ -56,6 +59,7 @@ for section in sections:
 
 def _go_to_section(index: int):
     st.session_state["current_section_index"] = max(0, min(index, len(sections) - 1))
+    st.session_state["scroll_to_questionnaire_top"] = True
     st.rerun()
 
 
@@ -64,6 +68,40 @@ def _short_section_name(section: str) -> str:
         return section.split("：", 1)[1]
     return section
 
+
+st.markdown('<span id="questionnaire-top"></span>', unsafe_allow_html=True)
+if st.session_state.get("scroll_to_questionnaire_top"):
+    st.session_state["scroll_to_questionnaire_top"] = False
+    components.html(
+        """
+        <script>
+        function scrollToQuestionnaireTop() {
+            try {
+                const doc = window.parent.document;
+                const target = doc.getElementById('questionnaire-top');
+                if (target) {
+                    target.scrollIntoView({behavior: 'auto', block: 'start'});
+                    return;
+                }
+                window.parent.scrollTo({top: 0, behavior: 'auto'});
+                const containers = [
+                    doc.querySelector('[data-testid="stAppViewContainer"]'),
+                    doc.querySelector('section.main'),
+                    doc.querySelector('.main')
+                ].filter(Boolean);
+                containers.forEach(function(el) {
+                    try { el.scrollTo({top: 0, behavior: 'auto'}); }
+                    catch(e) { el.scrollTop = 0; }
+                });
+            } catch(e) {}
+        }
+        setTimeout(scrollToQuestionnaireTop, 50);
+        setTimeout(scrollToQuestionnaireTop, 200);
+        setTimeout(scrollToQuestionnaireTop, 500);
+        </script>
+        """,
+        height=0,
+    )
 
 st.divider()
 st.subheader("开始作答")
