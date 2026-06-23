@@ -13,15 +13,27 @@ import streamlit as st
 
 HEADERS = [
     "submitted_at_utc", "submission_id", "schema_version", "top_type", "level",
-    "confidence", "gap", "second_type", "monarch", "chancellor", "guard",
-    "civilian", "emperor", "marshal", "monarch_raw", "chancellor_score",
-    "guard_score", "civilian_score", "emperor_score", "marshal_score", "type_score",
-    "risk_titles", "mbti_past", "mbti_self", "answers_json", "type_scores_json", "risks_json",
+    "confidence", "gap", "second_type", "chosen_monarch", "second_monarch",
+    "monarch_gap", "branch_gap", "monarch", "chancellor", "guard", "civilian",
+    "emperor", "marshal", "monarch_raw", "monarch_axis", "monarch_axis_centered",
+    "monarch_marshal", "chancellor_score", "chancellor_centered", "guard_score",
+    "guard_centered", "civilian_score", "emperor_score", "emperor_centered",
+    "marshal_score", "branch_score", "branch_score_centered", "type_score",
+    "risk_titles", "mbti_past", "mbti_self", "answers_json", "positions_json",
+    "monarch_axis_json", "monarch_axis_centered_json", "branch_scores_json",
+    "branch_scores_centered_json", "type_scores_json", "detail_json", "risks_json",
 ]
 
 
 def _json_dumps(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+
+
+def _round_or_blank(value: Any, ndigits: int = 6):
+    try:
+        return round(float(value), ndigits)
+    except Exception:
+        return ""
 
 
 def build_submission_row(
@@ -38,30 +50,48 @@ def build_submission_row(
     return {
         "submitted_at_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "submission_id": submission_id or str(uuid.uuid4()),
-        "schema_version": "v0.6",
+        "schema_version": "v0.6.1",
         "top_type": top_type,
         "level": result["level"],
         "confidence": result["confidence"],
-        "gap": round(float(result["gap"]), 6),
+        "gap": _round_or_blank(result.get("gap")),
         "second_type": result.get("second_type", ""),
+        "chosen_monarch": result.get("chosen_monarch", ""),
+        "second_monarch": result.get("second_monarch", ""),
+        "monarch_gap": _round_or_blank(result.get("monarch_gap")),
+        "branch_gap": _round_or_blank(result.get("branch_gap")),
         "monarch": type_map["monarch"],
         "chancellor": type_map["chancellor"],
         "guard": type_map["guard"],
         "civilian": type_map["civilian"],
         "emperor": type_map["emperor"],
         "marshal": type_map["marshal"],
-        "monarch_raw": round(float(detail["monarch_raw"]), 6),
-        "chancellor_score": round(float(detail["chancellor"]), 6),
-        "guard_score": round(float(detail["guard"]), 6),
-        "civilian_score": round(float(detail["civilian"]), 6),
-        "emperor_score": round(float(detail["emperor"]), 6),
-        "marshal_score": round(float(detail["marshal"]), 6),
-        "type_score": round(float(detail["score"]), 6),
+        "monarch_raw": _round_or_blank(detail.get("monarch_raw")),
+        "monarch_axis": _round_or_blank(detail.get("monarch_axis")),
+        "monarch_axis_centered": _round_or_blank(detail.get("monarch_axis_centered")),
+        "monarch_marshal": _round_or_blank(detail.get("monarch_marshal")),
+        "chancellor_score": _round_or_blank(detail.get("chancellor")),
+        "chancellor_centered": _round_or_blank(detail.get("chancellor_centered")),
+        "guard_score": _round_or_blank(detail.get("guard")),
+        "guard_centered": _round_or_blank(detail.get("guard_centered")),
+        "civilian_score": _round_or_blank(detail.get("civilian")),
+        "emperor_score": _round_or_blank(detail.get("emperor")),
+        "emperor_centered": _round_or_blank(detail.get("emperor_centered")),
+        "marshal_score": _round_or_blank(detail.get("marshal")),
+        "branch_score": _round_or_blank(detail.get("branch_score")),
+        "branch_score_centered": _round_or_blank(detail.get("branch_score_centered")),
+        "type_score": _round_or_blank(detail.get("score")),
         "risk_titles": "；".join(risk.get("title", "") for risk in risks),
         "mbti_past": mbti_past.strip(),
         "mbti_self": mbti_self.strip(),
         "answers_json": _json_dumps(answers),
-        "type_scores_json": _json_dumps(result["type_scores"]),
+        "positions_json": _json_dumps(result.get("positions", {})),
+        "monarch_axis_json": _json_dumps(result.get("monarch_axis", {})),
+        "monarch_axis_centered_json": _json_dumps(result.get("monarch_axis_centered", {})),
+        "branch_scores_json": _json_dumps(result.get("branch_scores", {})),
+        "branch_scores_centered_json": _json_dumps(result.get("branch_scores_centered", {})),
+        "type_scores_json": _json_dumps(result.get("type_scores", {})),
+        "detail_json": _json_dumps(result.get("detail", {})),
         "risks_json": _json_dumps(risks),
     }
 
@@ -119,7 +149,9 @@ def _save_to_google_sheets(row: Dict[str, Any]) -> Tuple[bool, str]:
         first_row = worksheet.row_values(1)
         if not first_row:
             worksheet.append_row(HEADERS, value_input_option="RAW")
-        worksheet.append_row([row.get(header, "") for header in HEADERS], value_input_option="USER_ENTERED")
+        elif first_row != HEADERS:
+            worksheet.update("A1", [HEADERS], value_input_option="RAW")
+        worksheet.append_row([row.get(header, "") for header in HEADERS], value_input_option="RAW")
         return True, "saved_to_google_sheets"
     except Exception as exc:
         return False, f"Google Sheets save failed: {exc}"
