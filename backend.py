@@ -38,7 +38,7 @@ def build_submission_row(
     return {
         "submitted_at_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "submission_id": submission_id or str(uuid.uuid4()),
-        "schema_version": "v0.5",
+        "schema_version": "v0.6",
         "top_type": top_type,
         "level": result["level"],
         "confidence": result["confidence"],
