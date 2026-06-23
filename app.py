@@ -12,6 +12,8 @@ from backend import build_submission_row, save_submission
 
 st.set_page_config(page_title="神性论人格王国测评", page_icon="👑", layout="wide")
 
+ANSWER_KEY_PREFIX = "answer_"
+
 if "submission_id" not in st.session_state:
     st.session_state["submission_id"] = str(uuid.uuid4())
 if "shuffle_seed" not in st.session_state:
@@ -20,6 +22,31 @@ if "current_section_index" not in st.session_state:
     st.session_state["current_section_index"] = 0
 if "scroll_to_questionnaire_top" not in st.session_state:
     st.session_state["scroll_to_questionnaire_top"] = False
+if "answers" not in st.session_state:
+    st.session_state["answers"] = {}
+
+for q in QUESTIONS:
+    st.session_state["answers"].setdefault(q["qid"], None)
+
+
+def _answer_key(qid: str) -> str:
+    return f"{ANSWER_KEY_PREFIX}{qid}"
+
+
+def _sync_widget_answers():
+    """Copy currently mounted radio widget values into a stable answer store.
+
+    Streamlit may clean up widget keys that are not rendered on the current page.
+    Keeping an explicit answer store prevents answers/progress from changing when pages are switched.
+    """
+    store = st.session_state["answers"]
+    for q in QUESTIONS:
+        widget_key = _answer_key(q["qid"])
+        if widget_key in st.session_state:
+            store[q["qid"]] = st.session_state.get(widget_key)
+
+
+_sync_widget_answers()
 
 st.title("神性论人格王国测评")
 st.caption("人格结构研究与自我理解工具｜非医学、非心理诊断")
@@ -58,6 +85,7 @@ for section in sections:
 
 
 def _go_to_section(index: int):
+    _sync_widget_answers()
     st.session_state["current_section_index"] = max(0, min(index, len(sections) - 1))
     st.session_state["scroll_to_questionnaire_top"] = True
     st.rerun()
@@ -129,13 +157,15 @@ if current_section.startswith("第五部分"):
     st.info("这一部分关注人在极度受压时可能出现的强烈反应，包括对外决裂、强烈否定、自责或自我攻击。它不代表你一定会这样做，也不代表道德评价。")
 
 for q in questions_by_section[current_section]:
-    label = q["front_text"] if not show_ids else f"【{q['qid']}】{q['front_text']}"
-    st.radio(
+    qid = q["qid"]
+    label = q["front_text"] if not show_ids else f"【{qid}】{q['front_text']}"
+    stored_value = st.session_state["answers"].get(qid)
+    selected_value = st.radio(
         label,
         options=[1, 2, 3, 4, 5],
-        index=None,
+        index=(stored_value - 1) if stored_value in [1, 2, 3, 4, 5] else None,
         horizontal=True,
-        key=q["qid"],
+        key=_answer_key(qid),
         format_func=lambda x: {
             1: "1 完全不符合",
             2: "2 不太符合",
@@ -144,8 +174,9 @@ for q in questions_by_section[current_section]:
             5: "5 非常符合",
         }[x],
     )
+    st.session_state["answers"][qid] = selected_value
 
-section_answered_count = sum(1 for q in questions_by_section[current_section] if st.session_state.get(q["qid"]) is not None)
+section_answered_count = sum(1 for q in questions_by_section[current_section] if st.session_state["answers"].get(q["qid"]) is not None)
 section_total_count = len(questions_by_section[current_section])
 st.caption(f"本部分已作答 {section_answered_count}/{section_total_count} 题")
 
@@ -163,7 +194,7 @@ with next_col:
     else:
         st.button("已到最后一部分", disabled=True, use_container_width=True)
 
-answered_count = sum(1 for q in QUESTIONS if st.session_state.get(q["qid"]) is not None)
+answered_count = sum(1 for value in st.session_state["answers"].values() if value is not None)
 total_count = len(QUESTIONS)
 with progress_col:
     st.progress(answered_count / total_count, text=f"总进度 {answered_count}/{total_count} 题")
@@ -199,7 +230,8 @@ with col2:
     mbti_self = st.text_input("你自认为最接近的 MBTI 类型是？", placeholder="例如 INTP")
 
 if st.button("生成测评结果", type="primary"):
-    answers = {q["qid"]: st.session_state.get(q["qid"]) for q in QUESTIONS}
+    _sync_widget_answers()
+    answers = dict(st.session_state["answers"])
     missing = [q["qid"] for q in QUESTIONS if answers.get(q["qid"]) is None]
     if missing:
         st.error(f"还有 {len(missing)} 题未作答。请完成全部题目后再生成结果。")
