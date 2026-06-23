@@ -42,7 +42,7 @@ def _rank_map(scores):
 def _role_axis_bonus(chancellor, emperor, principle_scores):
     if SAME_DOMAIN_MIRROR.get(chancellor) != emperor:
         return 0.0
-    return max(0.0, min(principle_scores[chancellor], principle_scores[emperor]) - 60.0) * 0.18
+    return max(0.0, min(principle_scores[chancellor], principle_scores[emperor]) - 60.0) * 0.16
 
 
 def _monarch_rank_penalty(monarch, ranks):
@@ -50,9 +50,9 @@ def _monarch_rank_penalty(monarch, ranks):
     if rank <= 4:
         return 0.0
     if rank == 5:
-        return 15.0
+        return 12.0
     if rank == 6:
-        return 25.0
+        return 22.0
     return 40.0
 
 
@@ -64,6 +64,14 @@ def _level_from_high_questions(high_count):
     return "低位"
 
 
+def _scale_to_score(value):
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        return None
+    return _clamp((value - 1.0) / 4.0 * 100.0)
+
+
 def compute_scores(answers):
     domains = ["T", "N", "S", "F"]
     domain_raw = {d: 0.0 for d in domains}
@@ -72,6 +80,7 @@ def compute_scores(answers):
     direction_max = {f: 0.0 for f in FUNCTIONS}
     mixed_raw = {f: 0.0 for f in FUNCTIONS}
     mixed_appearances = {f: 0.0 for f in FUNCTIONS}
+    behavior_values = {f: [] for f in FUNCTIONS}
     high_count = 0
 
     for q in QUESTIONS:
@@ -109,6 +118,13 @@ def compute_scores(answers):
                 if worst_option and worst_option.get("principle") in FUNCTIONS:
                     mixed_raw[worst_option["principle"]] -= 1
 
+        elif qtype == "scale":
+            score = _scale_to_score(answer)
+            if score is not None:
+                for f in q.get("scores", {}):
+                    if f in FUNCTIONS:
+                        behavior_values[f].append(score)
+
     domain_scores = {}
     for d in domains:
         max_count = domain_max[d] or 1
@@ -125,8 +141,9 @@ def compute_scores(answers):
         mixed_scores[f] = ((mixed_raw[f] + app) / (3 * app) * 100) if app else 50.0
         mixed_scores[f] = _clamp(mixed_scores[f])
 
-    # v0.7.1：域内取舍仍用于区分 i/e，但不再把另一侧打得过低。
-    # 原则分更多保留所属四域强度，以免 Ni/Ne、Ti/Te 等被机械排斥。
+    behavior_scores = {f: mean(behavior_values[f]) if behavior_values[f] else 50.0 for f in FUNCTIONS}
+    behavior_centered = centered(behavior_scores)
+
     principle_base = {}
     principle_scores = {}
     for f in FUNCTIONS:
@@ -141,6 +158,8 @@ def compute_scores(answers):
         f: {
             "PrincipleScore": principle_scores[f],
             "PrincipleCentered": principle_centered[f],
+            "BehaviorScore": behavior_scores[f],
+            "BehaviorCentered": behavior_centered[f],
             "Domain": DOMAIN_OF[f],
             "DomainScore": domain_scores[DOMAIN_OF[f]],
             "DirectionScore": direction_scores[f],
@@ -165,42 +184,52 @@ def compute_scores(answers):
         adviser = SAME_DOMAIN_MIRROR[monarch]
         strategist = SAME_DOMAIN_MIRROR[guard]
 
-        civilian_fit = 100 - principle_scores[civilian]
+        # 子民位不再用“原则偏好低”判断，而重点看自然行为可用性是否低。
+        # 子民原则可能因压力/自我期望被打高；行为事实更能区分“压力”与“可用”。
+        civilian_fit = 100 - behavior_scores[civilian]
         role_axis_bonus = _role_axis_bonus(chancellor, emperor, principle_scores)
         rank_penalty = _monarch_rank_penalty(monarch, ranks)
 
         score = (
-            0.32 * principle_scores[monarch]
-            + 0.20 * principle_scores[chancellor]
-            + 0.16 * principle_scores[emperor]
-            + 0.10 * principle_scores[guard]
+            0.30 * principle_scores[monarch]
+            + 0.16 * principle_scores[chancellor]
+            + 0.10 * behavior_scores[chancellor]
+            + 0.10 * behavior_scores[guard]
+            + 0.12 * principle_scores[emperor]
             + 0.08 * civilian_fit
             + 0.06 * principle_scores[adviser]
-            + 0.04 * principle_scores[strategist]
+            + 0.04 * behavior_scores[strategist]
             + 0.04 * principle_scores[marshal]
             + role_axis_bonus
             - rank_penalty
         )
         type_scores[type_name] = score
-        branch_scores[type_name] = 0.60 * principle_scores[chancellor] + 0.40 * principle_scores[guard]
-        branch_scores_centered[type_name] = 0.60 * principle_centered[chancellor] + 0.40 * principle_centered[guard]
+        branch_scores[type_name] = 0.45 * principle_scores[chancellor] + 0.35 * behavior_scores[chancellor] + 0.20 * behavior_scores[guard]
+        branch_scores_centered[type_name] = 0.45 * principle_centered[chancellor] + 0.35 * behavior_centered[chancellor] + 0.20 * behavior_centered[guard]
 
         detail[type_name] = {
             "monarch_raw": principle_scores[monarch],
             "monarch_axis": principle_scores[monarch],
             "monarch_axis_centered": principle_centered[monarch],
+            "monarch_behavior": behavior_scores[monarch],
             "monarch_marshal": principle_scores[marshal],
             "chancellor": principle_scores[chancellor],
+            "chancellor_behavior": behavior_scores[chancellor],
             "chancellor_centered": principle_centered[chancellor],
             "guard": principle_scores[guard],
+            "guard_behavior": behavior_scores[guard],
             "guard_centered": principle_centered[guard],
             "civilian": principle_scores[civilian],
+            "civilian_behavior": behavior_scores[civilian],
+            "civilian_fit": civilian_fit,
             "civilian_positive": principle_scores[civilian],
             "civilian_aversion": 100 - principle_scores[civilian],
             "latent_civilian": principle_scores[civilian],
             "emperor": principle_scores[emperor],
+            "emperor_behavior": behavior_scores[emperor],
             "emperor_centered": principle_centered[emperor],
             "marshal": principle_scores[marshal],
+            "marshal_behavior": behavior_scores[marshal],
             "branch_score": branch_scores[type_name],
             "branch_score_centered": branch_scores_centered[type_name],
             "core_type_score": score,
@@ -238,9 +267,11 @@ def compute_scores(answers):
     if ranks[top_monarch] > 4:
         risks.append({"title": "君主原则不在前列", "body": "当前最高候选的君主原则没有排进前四，说明结果可能被宰相、帝师或护卫等强位抬高，需要谨慎理解。"})
     if overall_gap < 2.5:
-        risks.append({"title": "近邻类型分数很接近", "body": "前几名王国模板分差距很小，建议结合八原则分和王国位次一起看。"})
+        risks.append({"title": "近邻类型分数很接近", "body": "前几名王国模板分差距很小，建议结合八原则分、行为可用分和王国位次一起看。"})
     if near_cross_monarch_types:
         risks.append({"title": "存在跨君主近邻候选", "body": "有不同君主的候选类型与当前结果接近，说明结构可能处在相邻王国边界。"})
+    if d.get("civilian_behavior", 50) >= 70:
+        risks.append({"title": "子民行为可用性偏高", "body": "当前候选的子民位行为可用分偏高，可能说明该类型并非最稳，或该子民位已经高度整合。"})
 
     if overall_gap >= 5.0 and ranks[top_monarch] <= 3:
         confidence = "高"
@@ -256,6 +287,8 @@ def compute_scores(answers):
         "domain_scores": domain_scores,
         "direction_scores": direction_scores,
         "mixed_scores": mixed_scores,
+        "behavior_scores": behavior_scores,
+        "behavior_centered": behavior_centered,
         "high_count": high_count,
         "chosen_monarch": top_monarch,
         "second_monarch": second_monarch,
@@ -308,5 +341,5 @@ def build_report(result):
 
 八原则前四为：**{top_principles}**。{near_note}
 
-本次王国模板分为 **{d['score']:.2f}**，置信度为 **{result['confidence']}**。v0.7.1 先根据四域强度、自然取向和原则排序算出八大原则分，再将八原则分放入十六个王国模板中匹配。八原则分表示原则偏好强弱，不等于某个位次已经显露；高低位由第四部分单独判断。
+本次王国模板分为 **{d['score']:.2f}**，置信度为 **{result['confidence']}**。v0.7.2 同时使用“原则偏好分”和“自然行为可用分”：原则题主要判断王国核心，行为事实题主要帮助区分子民、护卫和宰相，避免把子民压力误当成稳定能力。
 """.strip()
