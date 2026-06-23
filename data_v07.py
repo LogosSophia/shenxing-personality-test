@@ -35,7 +35,7 @@ FUNCTIONS = ["Ti", "Te", "Ni", "Ne", "Si", "Se", "Fi", "Fe"]
 DOMAIN_OF = {"Ti": "T", "Te": "T", "Ni": "N", "Ne": "N", "Si": "S", "Se": "S", "Fi": "F", "Fe": "F"}
 DOMAIN_NAMES = {"T": "可理解 / 可建构", "N": "方向 / 可能", "S": "守恒 / 现实", "F": "本真 / 关联"}
 SAME_DOMAIN_MIRROR = {"Ti": "Te", "Te": "Ti", "Ni": "Ne", "Ne": "Ni", "Si": "Se", "Se": "Si", "Fi": "Fe", "Fe": "Fi"}
-MODULES = {"D": "第一部分：四域强度", "I": "第二部分：自然取向", "M": "第三部分：原则排序", "B": "第四部分：自然行为事实", "H": "第五部分：高低位辅助"}
+MODULES = {"D": "第一部分：四域强度", "I": "第二部分：自然取向", "M": "第三部分：原则排序", "B": "第四部分：自然行为轴", "H": "第五部分：高低位辅助"}
 
 
 def _pair(qid, module_key, prompt, a_text, a_scores, b_text, b_scores, principle=""):
@@ -44,10 +44,6 @@ def _pair(qid, module_key, prompt, a_text, a_scores, b_text, b_scores, principle
 
 def _mixed(qid, prompt, options, mode="priority"):
     return {"qid": qid, "module": MODULES["M"], "module_key": "M", "question_type": "best_worst", "front_text": prompt, "position": "八原则混战", "dimension": "", "principle": "", "scoring_key": "Mixed", "mode": mode, "options": options}
-
-
-def _scale(qid, principle, text):
-    return {"qid": qid, "module": MODULES["B"], "module_key": "B", "question_type": "scale", "front_text": text, "position": "自然行为事实", "dimension": principle, "principle": PRINCIPLES.get(principle, ""), "scoring_key": "Behavior", "scores": {principle: 1}}
 
 
 QUESTIONS = [
@@ -86,22 +82,14 @@ QUESTIONS = [
     _mixed("M07", "以下四种失败都很糟糕。哪一种最让你觉得“这件事不成立”？哪一种相对还能忍受？", [{"key": "A", "text": "里面根本说不通。", "principle": "Ti"}, {"key": "B", "text": "最后没有结果、没人负责。", "principle": "Te"}, {"key": "C", "text": "完全看不出它通向哪里。", "principle": "Ni"}, {"key": "D", "text": "它把新的可能都封死了。", "principle": "Ne"}], "failure"),
     _mixed("M08", "以下四种失败都很糟糕。哪一种最让你觉得“这件事不成立”？哪一种相对还能忍受？", [{"key": "A", "text": "它切断了原本的延续和积累。", "principle": "Si"}, {"key": "B", "text": "它离现实太远，不能真正处理。", "principle": "Se"}, {"key": "C", "text": "它让人背离自己。", "principle": "Fi"}, {"key": "D", "text": "它让关系断裂、无人回应。", "principle": "Fe"}], "failure"),
 
-    _scale("B_Ti_01", "Ti", "聊天或讨论时，我经常会自然纠正概念、定义或逻辑漏洞。"),
-    _scale("B_Ti_02", "Ti", "即使别人觉得没必要，我也常会追问“这句话到底是什么意思”。"),
-    _scale("B_Te_01", "Te", "我做事时经常会自然列目标、步骤、责任和截止点。"),
-    _scale("B_Te_02", "Te", "一群人做事时，我很容易变成那个推动结果落地的人。"),
-    _scale("B_Ni_01", "Ni", "我经常会把零散信息压成一个判断：这件事大概会走向哪里。"),
-    _scale("B_Ni_02", "Ni", "我做决定时，常常先看它未来会不会形成一条路。"),
-    _scale("B_Ne_01", "Ne", "我经常会突然想到新的玩法、解释或替代方案。"),
-    _scale("B_Ne_02", "Ne", "一件事已经有方案后，我还是会自然想它还能不能换个入口。"),
-    _scale("B_Si_01", "Si", "我会自然保存、复用过去有效的经验和流程。"),
-    _scale("B_Si_02", "Si", "熟悉的节奏、地点、习惯会明显提高我的稳定感。"),
-    _scale("B_Se_01", "Se", "我喜欢直接进入现场，边做边根据现实反馈调整。"),
-    _scale("B_Se_02", "Se", "我容易被新体验、冒险、速度、身体感受或现场氛围吸引。"),
-    _scale("B_Fi_01", "Fi", "我很清楚自己真正喜欢什么、不喜欢什么。"),
-    _scale("B_Fi_02", "Fi", "做选择时，我经常会先问这是不是违背了真实的自己。"),
-    _scale("B_Fe_01", "Fe", "我经常主动认识新朋友，或把陌生人拉进关系里。"),
-    _scale("B_Fe_02", "Fe", "我会自然留意气氛、回应、尴尬和人与人之间有没有接上。"),
+    _pair("B01", "B", "下面哪项更符合你的日常状态？", "我经常抓住别人话里的漏洞吐槽。", {"Ti": 1}, "我通常更倾向于赞成对方的想法。", {"Fe": 1}),
+    _pair("B02", "B", "下面哪项更符合你的日常状态？", "我做事通常有明确的目标和规划。", {"Te": 1}, "我时常纠结这是不是我真正想要的。", {"Fi": 1}),
+    _pair("B03", "B", "下面哪项更符合你的日常状态？", "往往事情刚刚开始，我就对结果有了预感。", {"Ni": 1}, "比起结果，我更关注过程。", {"Se": 1}),
+    _pair("B04", "B", "下面哪项更符合你的日常状态？", "我经常会灵机一动。", {"Ne": 1}, "我更喜欢熟悉的环境，比如总是吃同一家餐厅。", {"Si": 1}),
+    _pair("B05", "B", "下面哪项更符合你的日常状态？", "我经常独自思考，不太喜欢社交。", {"Ti": 1}, "我经常结交新朋友，没有互动时容易觉得没劲。", {"Fe": 1}),
+    _pair("B06", "B", "下面哪项更符合你的日常状态？", "需要一起做事时，我会自然去安排步骤和分工。", {"Te": 1}, "需要做选择时，我会反复确认自己是不是真的愿意。", {"Fi": 1}),
+    _pair("B07", "B", "下面哪项更符合你的日常状态？", "我常常很早就感觉到一件事最后大概会怎样。", {"Ni": 1}, "我更容易沉浸在正在发生的过程和体验里。", {"Se": 1}),
+    _pair("B08", "B", "下面哪项更符合你的日常状态？", "我经常突然想到另一种可能或新点子。", {"Ne": 1}, "熟悉的路线、环境和做法会让我明显更舒服。", {"Si": 1}),
 
     _pair("H01", "H", "面对自己的倾向，你更像：", "直接按自己的倾向行动，不太需要把它解释成一套完整说法。", {"high": 0}, "会自然想把自己的倾向解释清楚，让它在更高层面站得住。", {"high": 1}),
     _pair("H02", "H", "你更在意：", "自己知道怎么选就够了，不一定要形成一套说法。", {"high": 0}, "自己的判断能被定性、说明、安放进一套更大的理解里。", {"high": 1}),
