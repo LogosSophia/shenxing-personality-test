@@ -61,6 +61,15 @@ def _option_label(option):
     return f"{option['key']}. {option['text']}"
 
 
+def _mixed_labels(q):
+    mode = q.get("mode", "priority")
+    if mode == "failure":
+        return "最不能接受：", "相对还能忍受："
+    if mode == "appeal":
+        return "最打动：", "相对最不打动："
+    return "最优先保住：", "相对可以先放一放："
+
+
 def _kingdom_role_rows(result):
     m = result["map"]
     d = result["detail"][result["top_type"]]
@@ -73,7 +82,7 @@ def _kingdom_role_rows(result):
         {"王国位次": "护卫", "结构面向": "稳定/守门", "功能": m["guard"], "关键词": PRINCIPLES[m["guard"]], "分数": round(d["guard"], 2), "补充": "由王国模板推出，不再直接询问"},
         {"王国位次": "子民", "结构面向": "反面压力", "功能": m["civilian"], "关键词": PRINCIPLES[m["civilian"]], "分数": round(d["civilian"], 2), "补充": "子民不是越高越好，需结合王国结构看"},
         {"王国位次": "谏臣", "结构面向": "君主镜像 / 提醒位", "功能": adviser, "关键词": PRINCIPLES[adviser], "分数": round(scores.get(adviser, 0), 2), "补充": "由君主镜像推定"},
-        {"王国位次": "帝师", "结构面向": f"解释方式 / {result['level']}", "功能": m["emperor"], "关键词": PRINCIPLES[m["emperor"]], "分数": round(d["emperor"], 2), "补充": f"高低位辅助题 B 数：{result.get('high_count', 0)}"},
+        {"王国位次": "帝师", "结构面向": f"解释方式 / {result['level']}", "功能": m["emperor"], "关键词": PRINCIPLES[m["emperor"]], "分数": round(d["emperor"], 2), "补充": f"这里显示的是该原则分，不等于帝师显露程度；高低位辅助题 B 数：{result.get('high_count', 0)}"},
         {"王国位次": "谋士", "结构面向": "护卫镜像 / 隐性策略位", "功能": strategist, "关键词": PRINCIPLES[strategist], "分数": round(scores.get(strategist, 0), 2), "补充": "由护卫镜像推定"},
         {"王国位次": "元帅", "结构面向": "极限手段", "功能": m["marshal"], "关键词": PRINCIPLES[m["marshal"]], "分数": round(d["marshal"], 2), "补充": "由王国模板推出，不再直接询问极端反应"},
     ]
@@ -93,14 +102,9 @@ st.caption("八大结构原则取舍版｜非医学、非心理诊断")
 
 with st.expander("测评说明", expanded=True):
     st.markdown("""
-本版不再直接询问“宰相、护卫、帝师、元帅”等位次，而是从八大结构原则出发：
+本版不再直接询问“宰相、护卫、帝师、元帅”等位次，而是从八大结构原则出发。
 
-- 第一部分：四域强度
-- 第二部分：域内方向
-- 第三部分：八原则混战
-- 第四部分：高低位辅助
-
-作答时不要选“更正确”的答案，而选你更自然、更难放下的那个。
+作答时不要选“更正确”的答案，而选你更自然、更难放下的那个。第三部分每题需要做两个选择：一个最优先，一个相对可以放一放。
 """)
 
 sections = []
@@ -143,7 +147,7 @@ for i, section in enumerate(sections):
 
 st.markdown(f"### {current_idx + 1}/{len(sections)}　{current_section}")
 if current_section.startswith("第三部分"):
-    st.info("每题需要选两个：最不能放下、最能暂时放下。二者不能相同。")
+    st.info("每题需要选两个，且不能相同。一个代表最优先，另一个代表相对可以先放一放。")
 
 for q in questions_by_section[current_section]:
     qid = q["qid"]
@@ -161,11 +165,12 @@ for q in questions_by_section[current_section]:
         keys = [option["key"] for option in options]
         labels = [_option_label(option) for option in options]
         stored = stored if isinstance(stored, dict) else {}
+        best_label, worst_label = _mixed_labels(q)
         col_best, col_worst = st.columns(2)
         with col_best:
-            best = st.radio("最不能放下：", options=keys, index=keys.index(stored.get("best")) if stored.get("best") in keys else None, format_func=lambda key: labels[keys.index(key)], key=_answer_key(qid, "_best"))
+            best = st.radio(best_label, options=keys, index=keys.index(stored.get("best")) if stored.get("best") in keys else None, format_func=lambda key: labels[keys.index(key)], key=_answer_key(qid, "_best"))
         with col_worst:
-            worst = st.radio("最能暂时放下：", options=keys, index=keys.index(stored.get("worst")) if stored.get("worst") in keys else None, format_func=lambda key: labels[keys.index(key)], key=_answer_key(qid, "_worst"))
+            worst = st.radio(worst_label, options=keys, index=keys.index(stored.get("worst")) if stored.get("worst") in keys else None, format_func=lambda key: labels[keys.index(key)], key=_answer_key(qid, "_worst"))
         st.session_state["answers"][qid] = {"best": best, "worst": worst}
         if best and worst and best == worst:
             st.warning("这一题的两个选择不能相同。")
