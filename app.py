@@ -9,22 +9,22 @@ from data import QUESTIONS, TYPE_MAP, PRINCIPLES
 from scoring import compute_scores, build_report
 from backend import build_submission_row, save_submission
 
-st.set_page_config(page_title="神性论人格王国底盘测评 v0.5", page_icon="👑", layout="wide")
+st.set_page_config(page_title="神性论人格王国测评", page_icon="👑", layout="wide")
 
 if "submission_id" not in st.session_state:
     st.session_state["submission_id"] = str(uuid.uuid4())
 if "shuffle_seed" not in st.session_state:
     st.session_state["shuffle_seed"] = str(uuid.uuid4())
 
-st.title("神性论人格王国底盘测评 v0.5")
+st.title("神性论人格王国测评")
 st.caption("人格结构研究与自我理解工具｜非医学、非心理诊断")
 
 with st.expander("测评说明", expanded=True):
     st.markdown("""
-本测评只判定人格王国底盘、低位/高位、帝师气质、元帅反相、护卫防御与子民压力提示。  
-不判登山、幸福、英雄、圣徒、超人、神魔或人生终局。
+本测评用于观察一个人的核心判断方式、做事方式、压力来源、稳定方式、解释方式和极端反应。  
+它不是医学或心理诊断，也不判断人生高低、成败或好坏。
 
-量表说明：
+作答说明：
 
 - 1 = 完全不符合
 - 2 = 不太符合
@@ -32,16 +32,13 @@ with st.expander("测评说明", expanded=True):
 - 4 = 比较符合
 - 5 = 非常符合
 
-低位不是能力低，而是帝师气质尚未显露，君主秩序正在建立。  
-高位不是更健康、更温和或更少风险，而是帝师气质已经显露，王国开始解释自身秩序。
+有些压力不会直接表现出来，而会被你转成情绪、身体反应、理性分析、行动安排或关系需求。本测评会尝试识别这些间接反应。请尽量按真实经验作答，不需要选择“更好看”的答案。
 
-v0.5 会额外观察“主线—压力—防御—辩护—出兵/自毁”的动态链条：子民压力可能被护卫系统过滤、隔离、屏蔽或转译，因此显性子民分不高，并不一定代表该压力不存在。
-
-生成结果时，系统会默认记录本次答卷与计算结果，用于后续题库校准和模型改进。后台记录包含题目答案、各位次分数、最终结果、风险提示和可选 MBTI 对照；本页面不要求填写姓名、电话或联系方式。
+生成结果时，系统会默认记录本次匿名答卷与计算结果，用于后续题库校准和模型改进。本页面不要求填写姓名、电话或联系方式。
 """)
 
 # 正式测评默认自动打乱每部分内部题目顺序，不提供用户开关。
-# 章节顺序保持固定，以免元帅说明等上下文被打散。
+# 章节顺序保持固定，以免说明上下文被打散。
 show_ids = False
 
 sections = []
@@ -52,7 +49,7 @@ for q in QUESTIONS:
 questions_by_section = {}
 for section in sections:
     section_items = [q for q in QUESTIONS if q["module"] == section]
-    rng = random.Random(f"shenxing-v05-{st.session_state['shuffle_seed']}-{section}")
+    rng = random.Random(f"shenxing-v05-public-{st.session_state['shuffle_seed']}-{section}")
     rng.shuffle(section_items)
     questions_by_section[section] = section_items
 
@@ -65,11 +62,11 @@ tabs = st.tabs(sections)
 for tab, section in zip(tabs, sections):
     with tab:
         if section.startswith("第二部分"):
-            st.info("本部分包含两种问题：别人如何刺痛你，以及你自己是否已经这样审判自己。请按真实反应作答。")
+            st.info("这一部分关注压力来源：有些题来自别人对你的评价，有些题来自你自己对自己的怀疑。")
         if section.startswith("第四部分"):
-            st.info("本部分测的是护卫防御方式：外界压力进入前，你通常如何隔离、过滤、屏蔽或转译它。")
+            st.info("这一部分关注你在压力下如何让自己稳定下来，或如何把外界压力处理成自己能承受的形式。")
         if section.startswith("第六部分"):
-            st.info("以下题目询问的是你曾经实际做过，或清晰、强烈地想做过的阴影处理方式。它不代表你道德上认同，也不代表你一定会实施。v0.5 同时包含对外出兵与向内自我清算。")
+            st.info("这一部分关注人在极度受压时可能出现的强烈反应，包括对外决裂、强烈否定、自责或自我攻击。它不代表你一定会这样做，也不代表道德评价。")
         for q in questions_by_section[section]:
             label = q["front_text"] if not show_ids else f"【{q['qid']}】{q['front_text']}"
             answers[q["qid"]] = st.radio(
@@ -123,53 +120,48 @@ if st.button("生成测评结果", type="primary"):
     st.header(f"{result['level']} {result['top_type']}")
     st.markdown(report)
 
-    if save_status["ok"]:
-        if save_status["backend"] == "google_sheets":
-            st.caption("后台记录完成。")
-        else:
-            st.caption("后台记录已写入本地临时文件。正式收集样本时，请在 Streamlit Secrets 中配置 Google Sheets 持久化后台。")
-    else:
-        st.warning(f"结果已生成，但后台记录失败：{save_status['message']}")
+    if save_status["ok"] and save_status["backend"] == "google_sheets":
+        st.caption("答卷已记录。")
 
     if result["risks"]:
-        st.subheader("附加提示")
+        st.subheader("补充提示")
         for risk in result["risks"]:
             st.warning(f"**{risk['title']}**\n\n{risk['body']}")
 
-    st.subheader("王国位次")
-    m = result["map"]
-    role_rows = [
-        ("君主", m["monarch"], PRINCIPLES[m["monarch"]]),
-        ("宰相", m["chancellor"], PRINCIPLES[m["chancellor"]]),
-        ("护卫", m["guard"], PRINCIPLES[m["guard"]]),
-        ("子民", m["civilian"], PRINCIPLES[m["civilian"]]),
-        ("帝师", m["emperor"], PRINCIPLES[m["emperor"]]),
-        ("元帅", m["marshal"], PRINCIPLES[m["marshal"]]),
-    ]
-    st.table(pd.DataFrame(role_rows, columns=["位次", "功能", "原则"]))
-
-    st.subheader("16型底盘分")
-    score_df = pd.DataFrame(
-        [{"类型": t, "底盘分": round(s, 3)} for t, s in result["ordered_types"]]
-    )
-    st.dataframe(score_df, use_container_width=True)
-
-    st.subheader("当前主类型各位次分")
-    t = result["top_type"]
-    d = result["detail"][t]
-    detail_df = pd.DataFrame([{
-        "君主原始分": round(d["monarch_raw"], 3),
-        "宰相分": round(d["chancellor"], 3),
-        "护卫分": round(d["guard"], 3),
-        "子民显性分": round(d["civilian"], 3),
-        "潜在子民压力": round(d.get("latent_civilian", d["civilian"]), 3),
-        "子民计分证据": round(d.get("civilian_evidence", d["civilian"]), 3),
-        "帝师分": round(d["emperor"], 3),
-        "元帅分": round(d["marshal"], 3),
-        "底盘分": round(d["score"], 3),
-        "置信度": result["confidence"],
-    }])
-    st.dataframe(detail_df, use_container_width=True)
-
     if mbti_past or mbti_self:
         st.info(f"对照信息：过往常测 MBTI：{mbti_past or '未填写'}；自认为接近：{mbti_self or '未填写'}。")
+
+    with st.expander("查看详细数据（可选）"):
+        st.subheader("结构摘要")
+        m = result["map"]
+        role_rows = [
+            ("核心判断", m["monarch"], PRINCIPLES[m["monarch"]]),
+            ("做事方式", m["chancellor"], PRINCIPLES[m["chancellor"]]),
+            ("稳定方式", m["guard"], PRINCIPLES[m["guard"]]),
+            ("压力来源", m["civilian"], PRINCIPLES[m["civilian"]]),
+            ("解释方式", m["emperor"], PRINCIPLES[m["emperor"]]),
+            ("极端反应", m["marshal"], PRINCIPLES[m["marshal"]]),
+        ]
+        st.table(pd.DataFrame(role_rows, columns=["面向", "功能", "关键词"]))
+
+        st.subheader("类型接近度")
+        score_df = pd.DataFrame(
+            [{"类型": t, "接近度": round(s, 3)} for t, s in result["ordered_types"]]
+        )
+        st.dataframe(score_df, use_container_width=True)
+
+        st.subheader("当前主类型分数")
+        t = result["top_type"]
+        d = result["detail"][t]
+        detail_df = pd.DataFrame([{
+            "核心判断": round(d["monarch_raw"], 3),
+            "做事方式": round(d["chancellor"], 3),
+            "稳定方式": round(d["guard"], 3),
+            "显性压力": round(d["civilian"], 3),
+            "隐藏压力指标": round(d.get("latent_civilian", d["civilian"]), 3),
+            "解释方式": round(d["emperor"], 3),
+            "极端反应": round(d["marshal"], 3),
+            "总体接近度": round(d["score"], 3),
+            "置信度": result["confidence"],
+        }])
+        st.dataframe(detail_df, use_container_width=True)
