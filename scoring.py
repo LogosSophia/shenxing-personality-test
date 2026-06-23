@@ -9,6 +9,12 @@ OPPOSITE = {
     "Ni": "Se", "Se": "Ni",
     "Ne": "Si", "Si": "Ne",
 }
+SAME_DOMAIN_MIRROR = {
+    "Ti": "Te", "Te": "Ti",
+    "Ni": "Ne", "Ne": "Ni",
+    "Si": "Se", "Se": "Si",
+    "Fi": "Fe", "Fe": "Fi",
+}
 
 # 元帅由君主轴决定，同一君主下的两个底盘元帅相同；它辅助确定君主，而不是辅助区分同君主底盘。
 MARSHAL_BY_MONARCH = {}
@@ -48,6 +54,25 @@ def _level_from_emperor(emperor_score, emperor_centered):
     if emperor_score >= 3.75 or emperor_centered >= 0.30:
         return "高位倾向"
     return "低位"
+
+
+def _dual_role_bonus(a, b, core_positive, core_centered):
+    """同域宰相/帝师双高时，视为某王国的位次结构，而不是单个功能夺权。"""
+    if SAME_DOMAIN_MIRROR.get(a) != b:
+        return 0.0, 0.0
+    raw_strength = max(0.0, min(core_positive[a], core_positive[b]) - 3.50)
+    centered_strength = max(0.0, min(core_centered[a], core_centered[b]))
+    return 0.30 * raw_strength, 0.30 * centered_strength
+
+
+def _misplaced_ti_te_penalty(monarch, core_positive, core_centered):
+    """Ti/Te 双高通常应先解释为 Te 宰相 + Ti 帝师，而不是 Ti/Te 君主。"""
+    if monarch not in ["Ti", "Te"]:
+        return 0.0, 0.0
+    mirror = SAME_DOMAIN_MIRROR[monarch]
+    raw_strength = max(0.0, min(core_positive[monarch], core_positive[mirror]) - 3.50)
+    centered_strength = max(0.0, min(core_centered[monarch], core_centered[mirror]))
+    return 0.30 * raw_strength, 0.30 * centered_strength
 
 
 def compute_scores(answers):
@@ -99,8 +124,6 @@ def compute_scores(answers):
     for f in FUNCTIONS:
         opposite = OPPOSITE[f]
         marshal_for_monarch = MARSHAL_BY_MONARCH[f]
-        # 君主轴：正面拥抱君主 + 反面不愿面对其子民 + 极端处元帅确认。
-        # 元帅是君主面对子民压力时的最后手段，因此辅助确定君主；它不参与同君主两个底盘的分支裁决。
         monarch_axis[f] = (
             0.40 * core_positive[f]
             + 0.45 * civilian_evidence[opposite]
@@ -112,17 +135,10 @@ def compute_scores(answers):
             + 0.15 * marshal_c[marshal_for_monarch]
         )
 
-    monarch_order = sorted(
-        FUNCTIONS,
-        key=lambda f: (monarch_axis_centered[f], monarch_axis[f]),
-        reverse=True,
-    )
-    chosen_monarch = monarch_order[0]
-    second_monarch = monarch_order[1]
-    monarch_gap = monarch_axis_centered[chosen_monarch] - monarch_axis_centered[second_monarch]
-
     detail = {}
     type_scores = {}
+    core_type_scores = {}
+    core_type_scores_centered = {}
     branch_scores = {}
     branch_scores_centered = {}
 
@@ -140,8 +156,7 @@ def compute_scores(answers):
         marshal_score = marshal_raw[marshal]
         emperor_score = emperor_raw[emperor]
 
-        # 底盘分支：君主确定后，宰相必须先被锚定。
-        # 护卫只能轻微校正稳定方式，不能用护卫强行推出宰相；否则高位结构会被误判成相邻底盘。
+        # 底盘分支：君主确定后，宰相必须先被锚定。护卫只能轻微校正稳定方式。
         chancellor_anchor = 0.65 * chancellor_score + 0.35 * core_positive[chancellor]
         chancellor_anchor_centered = 0.65 * ch_c[chancellor] + 0.35 * cp_c[chancellor]
         branch_score = 0.90 * chancellor_anchor + 0.10 * guard_score
@@ -149,8 +164,34 @@ def compute_scores(answers):
         branch_scores[t] = branch_score
         branch_scores_centered[t] = branch_score_centered
 
-        # 展示用接近度：君主轴优先，分支为辅。
-        score = 0.68 * monarch_axis[monarch] + 0.32 * branch_score
+        # 第一部分王国模板分：先看“功能在王国中的位置”，而不是把最高功能直接当君主。
+        role_pair_bonus, role_pair_bonus_c = _dual_role_bonus(chancellor, emperor, core_positive, cp_c)
+        misplaced_penalty, misplaced_penalty_c = _misplaced_ti_te_penalty(monarch, core_positive, cp_c)
+        core_type_score = (
+            0.42 * monarch_axis[monarch]
+            + 0.18 * core_positive[chancellor]
+            + 0.16 * core_positive[emperor]
+            + 0.10 * core_positive[guard]
+            + 0.08 * civilian_evidence[civilian]
+            + 0.06 * branch_score
+            + role_pair_bonus
+            - misplaced_penalty
+        )
+        core_type_score_centered = (
+            0.42 * monarch_axis_centered[monarch]
+            + 0.18 * cp_c[chancellor]
+            + 0.16 * cp_c[emperor]
+            + 0.10 * cp_c[guard]
+            + 0.08 * civ_c[civilian]
+            + 0.06 * branch_score_centered
+            + role_pair_bonus_c
+            - misplaced_penalty_c
+        )
+        core_type_scores[t] = core_type_score
+        core_type_scores_centered[t] = core_type_score_centered
+
+        # 展示用底盘分：第一部分王国模板为主，后面模块只能校验/微调，不能反过来夺权。
+        score = 0.78 * core_type_score + 0.22 * branch_score
         type_scores[t] = score
 
         detail[t] = {
@@ -174,30 +215,49 @@ def compute_scores(answers):
             "marshal": marshal_score,
             "branch_score": branch_score,
             "branch_score_centered": branch_score_centered,
+            "core_type_score": core_type_score,
+            "core_type_score_centered": core_type_score_centered,
             "score": score,
         }
 
-    same_monarch_candidates = [t for t, m in TYPE_MAP.items() if m["monarch"] == chosen_monarch]
-    candidate_order = sorted(
-        same_monarch_candidates,
-        key=lambda t: (branch_scores_centered[t], branch_scores[t]),
+    # 最终判型：第一部分王国模板优先；Z/G/E/X 作为校验、分支和阶段信息。
+    core_order = sorted(
+        TYPE_MAP.keys(),
+        key=lambda t: (core_type_scores_centered[t], core_type_scores[t], type_scores[t]),
         reverse=True,
     )
-    top_type = candidate_order[0]
-    second_same_monarch = candidate_order[1]
-    branch_gap = branch_scores_centered[top_type] - branch_scores_centered[second_same_monarch]
+    top_type = core_order[0]
+    m = TYPE_MAP[top_type]
+    chosen_monarch = m["monarch"]
+    second_monarch = next(
+        (TYPE_MAP[t]["monarch"] for t in core_order if TYPE_MAP[t]["monarch"] != chosen_monarch),
+        chosen_monarch,
+    )
+    second_monarch_score = next(
+        (core_type_scores_centered[t] for t in core_order if TYPE_MAP[t]["monarch"] != chosen_monarch),
+        core_type_scores_centered[top_type],
+    )
+    monarch_gap = core_type_scores_centered[top_type] - second_monarch_score
 
-    # 16型底盘分按综合接近度展示；最终判型仍先看君主轴，再看同君主分支。
+    same_monarch_candidates = [t for t, tm in TYPE_MAP.items() if tm["monarch"] == chosen_monarch]
+    candidate_order = sorted(
+        same_monarch_candidates,
+        key=lambda t: (core_type_scores_centered[t], branch_scores_centered[t], core_type_scores[t]),
+        reverse=True,
+    )
+    second_same_monarch = candidate_order[1] if len(candidate_order) > 1 else top_type
+    branch_gap = core_type_scores_centered[top_type] - core_type_scores_centered[second_same_monarch]
+
     overall_order = sorted(
         TYPE_MAP.keys(),
-        key=lambda t: (type_scores[t], branch_scores_centered[t], monarch_axis_centered[TYPE_MAP[t]["monarch"]]),
+        key=lambda t: (type_scores[t], core_type_scores_centered[t], branch_scores_centered[t]),
         reverse=True,
     )
     ordered = [(t, type_scores[t]) for t in overall_order]
     overall_gap = type_scores[overall_order[0]] - type_scores[overall_order[1]] if len(overall_order) > 1 else 0.0
     near_types = [
         t for t in overall_order[1:]
-        if type_scores[top_type] - type_scores[t] <= 0.10
+        if abs(type_scores[top_type] - type_scores[t]) <= 0.10
     ]
     near_cross_monarch_types = [
         t for t in near_types
@@ -205,8 +265,6 @@ def compute_scores(answers):
     ]
 
     d = detail[top_type]
-    m = TYPE_MAP[top_type]
-
     level = _level_from_emperor(d["emperor"], d["emperor_centered"])
     is_high = level == "高位"
 
@@ -214,14 +272,14 @@ def compute_scores(answers):
 
     if monarch_gap < 0.08:
         risks.append({
-            "title": "核心判断区分度较低",
-            "body": "你在几个核心判断之间的差距很小，结果更适合理解为当前最接近的结构，而不是绝对定型。建议结合详细数据里的前几名候选一起看。",
+            "title": "核心王国区分度较低",
+            "body": "几个王国模板的差距很小，结果更适合理解为当前最接近的结构，而不是绝对定型。建议结合详细数据里的前几名候选一起看。",
         })
 
     if branch_gap < 0.08:
         risks.append({
-            "title": "做事分支区分度较低",
-            "body": "当前核心判断确定后，两个相邻底盘候选的做事方式和稳定方式差距不大，因此底盘分支需要谨慎理解。",
+            "title": "同君主分支区分度较低",
+            "body": "当前君主确定后，两个相邻底盘候选的做事方式和稳定方式差距不大，因此底盘分支需要谨慎理解。",
         })
 
     if overall_gap < 0.08 and near_types:
@@ -270,7 +328,7 @@ def compute_scores(answers):
             "body": "你在极度受压时的强烈反应比较明显。它可能表现为对外决裂、强烈否定，也可能表现为自责或自我攻击。需要留意这类反应是否过早出现。",
         })
 
-    if overall_gap < 0.05 or near_cross_monarch_types:
+    if monarch_gap < 0.08 or overall_gap < 0.05 or near_cross_monarch_types:
         confidence = "低"
     elif monarch_gap >= 0.20 and branch_gap >= 0.15 and overall_gap >= 0.08:
         confidence = "高"
@@ -290,6 +348,8 @@ def compute_scores(answers):
         "branch_scores": branch_scores,
         "branch_scores_centered": branch_scores_centered,
         "type_scores": type_scores,
+        "core_type_scores": core_type_scores,
+        "core_type_scores_centered": core_type_scores_centered,
         "detail": detail,
         "ordered_types": ordered,
         "top_type": top_type,
@@ -359,5 +419,5 @@ def build_report(result):
 
 整体来看，{chain}{latent_note}{near_note}
 
-本次总体接近度为 **{d['score']:.2f}**，置信度为 **{result['confidence']}**。这次判型先看核心判断、反面压力和极端反应构成的主轴，再用做事方式和稳定方式确定底盘分支，最后再看解释方式判断高低位。
+本次总体接近度为 **{d['score']:.2f}**，置信度为 **{result['confidence']}**。这次判型先由第一部分锁定王国模板，再用做事方式和稳定方式校验底盘分支，最后看解释方式判断高低位。
 """.strip()
