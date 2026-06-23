@@ -13,6 +13,12 @@ from backend import build_submission_row, save_submission
 st.set_page_config(page_title="神性论人格王国测评", page_icon="👑", layout="wide")
 
 ANSWER_KEY_PREFIX = "answer_"
+SAME_DOMAIN_MIRROR = {
+    "Ti": "Te", "Te": "Ti",
+    "Ni": "Ne", "Ne": "Ni",
+    "Si": "Se", "Se": "Si",
+    "Fi": "Fe", "Fe": "Fi",
+}
 
 if "submission_id" not in st.session_state:
     st.session_state["submission_id"] = str(uuid.uuid4())
@@ -100,6 +106,8 @@ def _short_section_name(section: str) -> str:
 def _kingdom_role_rows(result):
     m = result["map"]
     d = result["detail"][result["top_type"]]
+    adviser = SAME_DOMAIN_MIRROR[m["monarch"]]
+    strategist = SAME_DOMAIN_MIRROR[m["guard"]]
     return [
         {
             "王国位次": "君主",
@@ -134,12 +142,28 @@ def _kingdom_role_rows(result):
             "补充": f"正向拥抱 {d.get('civilian_positive', 0):.3f}｜反面排斥 {d.get('civilian_aversion', 0):.3f}｜隐藏压力 {d.get('latent_civilian', d['civilian']):.3f}",
         },
         {
+            "王国位次": "谏臣",
+            "结构面向": "君主镜像 / 提醒位",
+            "功能": adviser,
+            "关键词": PRINCIPLES[adviser],
+            "分数": "—",
+            "补充": "由君主镜像推定，当前版本不单独计分。",
+        },
+        {
             "王国位次": "帝师",
             "结构面向": f"解释方式 / {result['level']}",
             "功能": m["emperor"],
             "关键词": PRINCIPLES[m["emperor"]],
             "分数": round(d["emperor"], 3),
             "补充": f"解释方式差 {d.get('emperor_centered', 0):.3f}",
+        },
+        {
+            "王国位次": "谋士",
+            "结构面向": "护卫镜像 / 隐性策略位",
+            "功能": strategist,
+            "关键词": PRINCIPLES[strategist],
+            "分数": "—",
+            "补充": "由护卫镜像推定，当前版本不单独计分。",
         },
         {
             "王国位次": "元帅",
@@ -310,7 +334,7 @@ if st.button("生成测评结果", type="primary"):
     st.header(f"{result['level']} {result['top_type']}")
     st.subheader("人格王国位次与分数")
     st.dataframe(pd.DataFrame(_kingdom_role_rows(result)), use_container_width=True, hide_index=True)
-    st.caption("分数为 1—5 区间的原始位置分或综合轴分；“差”表示相对个人平均作答风格后的突出程度，用于校准。")
+    st.caption("君主、宰相、护卫、子民、帝师、元帅为本版直接计分位次；谏臣、谋士为镜像推定位次，先保留功能位置，不单独展开。")
     st.subheader("报告说明")
     st.markdown(report)
 
