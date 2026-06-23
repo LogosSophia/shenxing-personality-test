@@ -10,6 +10,15 @@ OPPOSITE = {
     "Ne": "Si", "Si": "Ne",
 }
 
+# 元帅由君主轴决定，同一君主下的两个底盘元帅相同；它辅助确定君主，而不是辅助区分同君主底盘。
+MARSHAL_BY_MONARCH = {}
+for _type_name, _type_map in TYPE_MAP.items():
+    _monarch = _type_map["monarch"]
+    _marshal = _type_map["marshal"]
+    if _monarch in MARSHAL_BY_MONARCH and MARSHAL_BY_MONARCH[_monarch] != _marshal:
+        raise ValueError(f"Inconsistent marshal mapping for monarch {_monarch}")
+    MARSHAL_BY_MONARCH[_monarch] = _marshal
+
 ROLE_WORDS = {
     "Ti": "清楚、自洽、讲得通",
     "Te": "结果、责任、推进",
@@ -79,9 +88,19 @@ def compute_scores(answers):
     monarch_axis_centered = {}
     for f in FUNCTIONS:
         opposite = OPPOSITE[f]
-        # 君主轴：正面拥抱君主 + 反面不愿面对其子民。
-        monarch_axis[f] = 0.45 * core_positive[f] + 0.55 * civilian_evidence[opposite]
-        monarch_axis_centered[f] = 0.45 * cp_c[f] + 0.55 * civ_c[opposite]
+        marshal_for_monarch = MARSHAL_BY_MONARCH[f]
+        # 君主轴：正面拥抱君主 + 反面不愿面对其子民 + 极端处元帅确认。
+        # 元帅是君主面对子民压力时的最后手段，因此辅助确定君主；它不参与同君主两个底盘的分支裁决。
+        monarch_axis[f] = (
+            0.40 * core_positive[f]
+            + 0.45 * civilian_evidence[opposite]
+            + 0.15 * marshal_raw[marshal_for_monarch]
+        )
+        monarch_axis_centered[f] = (
+            0.40 * cp_c[f]
+            + 0.45 * civ_c[opposite]
+            + 0.15 * marshal_c[marshal_for_monarch]
+        )
 
     monarch_order = sorted(
         FUNCTIONS,
@@ -111,14 +130,14 @@ def compute_scores(answers):
         marshal_score = marshal_raw[marshal]
         emperor_score = emperor_raw[emperor]
 
-        # 底盘分支：君主确定后，主要看宰相，其次护卫，元帅只作极端确认；帝师不参与底盘判定。
-        branch_score = 0.70 * chancellor_score + 0.20 * guard_score + 0.10 * marshal_score
-        branch_score_centered = 0.70 * ch_c[chancellor] + 0.20 * guard_c[guard] + 0.10 * marshal_c[marshal]
+        # 底盘分支：君主确定后，主要看宰相，其次看护卫；帝师不参与底盘，元帅也不区分同君主底盘。
+        branch_score = 0.78 * chancellor_score + 0.22 * guard_score
+        branch_score_centered = 0.78 * ch_c[chancellor] + 0.22 * guard_c[guard]
         branch_scores[t] = branch_score
         branch_scores_centered[t] = branch_score_centered
 
         # 展示用接近度：君主轴优先，分支为辅。
-        score = 0.65 * monarch_axis[monarch] + 0.35 * branch_score
+        score = 0.68 * monarch_axis[monarch] + 0.32 * branch_score
         type_scores[t] = score
 
         detail[t] = {
@@ -126,6 +145,7 @@ def compute_scores(answers):
             "monarch_aversion": core_aversion[monarch],
             "monarch_axis": monarch_axis[monarch],
             "monarch_axis_centered": monarch_axis_centered[monarch],
+            "monarch_marshal": marshal_raw[MARSHAL_BY_MONARCH[monarch]],
             "chancellor": chancellor_score,
             "guard": guard_score,
             "civilian": civilian_score,
@@ -178,7 +198,7 @@ def compute_scores(answers):
     if branch_gap < 0.08:
         risks.append({
             "title": "做事分支区分度较低",
-            "body": "当前核心判断确定后，两个相邻底盘候选的做事方式、稳定方式和极端反应差距不大，因此底盘分支需要谨慎理解。",
+            "body": "当前核心判断确定后，两个相邻底盘候选的做事方式和稳定方式差距不大，因此底盘分支需要谨慎理解。",
         })
 
     guard_takeover = d["guard"] >= 4.30 and (
@@ -290,5 +310,5 @@ def build_report(result):
 
 整体来看，{chain}{latent_note}
 
-本次总体接近度为 **{d['score']:.2f}**，置信度为 **{result['confidence']}**。这次判型先看核心判断与反面压力构成的主轴，再用做事方式和稳定方式确定底盘分支，最后再看解释方式判断高低位。
+本次总体接近度为 **{d['score']:.2f}**，置信度为 **{result['confidence']}**。这次判型先看核心判断、反面压力和极端反应构成的主轴，再用做事方式和稳定方式确定底盘分支，最后再看解释方式判断高低位。
 """.strip()
