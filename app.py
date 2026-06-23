@@ -97,6 +97,61 @@ def _short_section_name(section: str) -> str:
     return section
 
 
+def _kingdom_role_rows(result):
+    m = result["map"]
+    d = result["detail"][result["top_type"]]
+    return [
+        {
+            "王国位次": "君主",
+            "结构面向": "核心判断 / 君主轴",
+            "功能": m["monarch"],
+            "关键词": PRINCIPLES[m["monarch"]],
+            "分数": round(d.get("monarch_axis", d["monarch_raw"]), 3),
+            "补充": f"核心正向 {d['monarch_raw']:.3f}｜核心轴差 {d.get('monarch_axis_centered', 0):.3f}",
+        },
+        {
+            "王国位次": "宰相",
+            "结构面向": "做事方式",
+            "功能": m["chancellor"],
+            "关键词": PRINCIPLES[m["chancellor"]],
+            "分数": round(d["chancellor"], 3),
+            "补充": f"做事方式差 {d.get('chancellor_centered', 0):.3f}",
+        },
+        {
+            "王国位次": "护卫",
+            "结构面向": "稳定方式",
+            "功能": m["guard"],
+            "关键词": PRINCIPLES[m["guard"]],
+            "分数": round(d["guard"], 3),
+            "补充": f"稳定方式差 {d.get('guard_centered', 0):.3f}",
+        },
+        {
+            "王国位次": "子民",
+            "结构面向": "反面压力",
+            "功能": m["civilian"],
+            "关键词": PRINCIPLES[m["civilian"]],
+            "分数": round(d["civilian"], 3),
+            "补充": f"正向拥抱 {d.get('civilian_positive', 0):.3f}｜反面排斥 {d.get('civilian_aversion', 0):.3f}｜隐藏压力 {d.get('latent_civilian', d['civilian']):.3f}",
+        },
+        {
+            "王国位次": "帝师",
+            "结构面向": f"解释方式 / {result['level']}",
+            "功能": m["emperor"],
+            "关键词": PRINCIPLES[m["emperor"]],
+            "分数": round(d["emperor"], 3),
+            "补充": f"解释方式差 {d.get('emperor_centered', 0):.3f}",
+        },
+        {
+            "王国位次": "元帅",
+            "结构面向": "极端反应 / 君主轴确认",
+            "功能": m["marshal"],
+            "关键词": PRINCIPLES[m["marshal"]],
+            "分数": round(d["marshal"], 3),
+            "补充": f"元帅确认 {d.get('monarch_marshal', d['marshal']):.3f}",
+        },
+    ]
+
+
 st.markdown('<span id="questionnaire-top"></span>', unsafe_allow_html=True)
 if st.session_state.get("scroll_to_questionnaire_top"):
     st.session_state["scroll_to_questionnaire_top"] = False
@@ -253,6 +308,10 @@ if st.button("生成测评结果", type="primary"):
 
     st.divider()
     st.header(f"{result['level']} {result['top_type']}")
+    st.subheader("人格王国位次与分数")
+    st.dataframe(pd.DataFrame(_kingdom_role_rows(result)), use_container_width=True, hide_index=True)
+    st.caption("分数为 1—5 区间的原始位置分或综合轴分；“差”表示相对个人平均作答风格后的突出程度，用于校准。")
+    st.subheader("报告说明")
     st.markdown(report)
 
     if save_status["ok"] and save_status["backend"] == "google_sheets":
@@ -267,17 +326,8 @@ if st.button("生成测评结果", type="primary"):
         st.info(f"对照信息：过往常测 MBTI：{mbti_past or '未填写'}；自认为接近：{mbti_self or '未填写'}。")
 
     with st.expander("查看详细数据（可选）"):
-        st.subheader("结构摘要")
-        m = result["map"]
-        role_rows = [
-            ("核心判断", m["monarch"], PRINCIPLES[m["monarch"]]),
-            ("做事方式", m["chancellor"], PRINCIPLES[m["chancellor"]]),
-            ("稳定方式", m["guard"], PRINCIPLES[m["guard"]]),
-            ("反面压力", m["civilian"], PRINCIPLES[m["civilian"]]),
-            ("解释方式", m["emperor"], PRINCIPLES[m["emperor"]]),
-            ("极端反应", m["marshal"], PRINCIPLES[m["marshal"]]),
-        ]
-        st.table(pd.DataFrame(role_rows, columns=["面向", "功能", "关键词"]))
+        st.subheader("人格王国位次")
+        st.dataframe(pd.DataFrame(_kingdom_role_rows(result)), use_container_width=True, hide_index=True)
 
         st.subheader("候选类型")
         candidate_rows = []
