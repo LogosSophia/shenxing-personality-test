@@ -143,10 +143,18 @@ if st.button("生成测评结果", type="primary"):
         st.table(pd.DataFrame(role_rows, columns=["面向", "功能", "关键词"]))
 
         st.subheader("候选类型")
-        score_df = pd.DataFrame(
-            [{"类型": t, "接近度": round(s, 3)} for t, s in result["ordered_types"]]
-        )
-        st.dataframe(score_df, use_container_width=True)
+        candidate_rows = []
+        for candidate_type, display_score in result["ordered_types"]:
+            cd = result["detail"][candidate_type]
+            candidate_rows.append({
+                "类型": candidate_type,
+                "核心轴": round(cd.get("monarch_axis", 0), 3),
+                "核心轴差": round(cd.get("monarch_axis_centered", 0), 3),
+                "分支支持": round(cd.get("branch_score", 0), 3),
+                "分支差": round(cd.get("branch_score_centered", 0), 3),
+                "综合接近度": round(display_score, 3),
+            })
+        st.dataframe(pd.DataFrame(candidate_rows), use_container_width=True)
 
         st.subheader("当前主类型分数")
         t = result["top_type"]
