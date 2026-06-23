@@ -187,17 +187,22 @@ def compute_scores(answers):
     second_same_monarch = candidate_order[1]
     branch_gap = branch_scores_centered[top_type] - branch_scores_centered[second_same_monarch]
 
-    # 排序展示：先按君主轴，再按分支支持度。这样不会再让不同君主的类型用纯线性总分一锅比较。
-    ordered_types = sorted(
+    # 16型底盘分按综合接近度展示；最终判型仍先看君主轴，再看同君主分支。
+    overall_order = sorted(
         TYPE_MAP.keys(),
-        key=lambda t: (
-            monarch_axis_centered[TYPE_MAP[t]["monarch"]],
-            branch_scores_centered[t],
-            type_scores[t],
-        ),
+        key=lambda t: (type_scores[t], branch_scores_centered[t], monarch_axis_centered[TYPE_MAP[t]["monarch"]]),
         reverse=True,
     )
-    ordered = [(t, type_scores[t]) for t in ordered_types]
+    ordered = [(t, type_scores[t]) for t in overall_order]
+    overall_gap = type_scores[overall_order[0]] - type_scores[overall_order[1]] if len(overall_order) > 1 else 0.0
+    near_types = [
+        t for t in overall_order[1:]
+        if type_scores[top_type] - type_scores[t] <= 0.10
+    ]
+    near_cross_monarch_types = [
+        t for t in near_types
+        if TYPE_MAP[t]["monarch"] != chosen_monarch
+    ]
 
     d = detail[top_type]
     m = TYPE_MAP[top_type]
@@ -217,6 +222,18 @@ def compute_scores(answers):
         risks.append({
             "title": "做事分支区分度较低",
             "body": "当前核心判断确定后，两个相邻底盘候选的做事方式和稳定方式差距不大，因此底盘分支需要谨慎理解。",
+        })
+
+    if overall_gap < 0.08 and near_types:
+        risks.append({
+            "title": "近邻类型分数很接近",
+            "body": "本次前几名底盘分差距很小，说明结构可能处在相邻类型边界，或部分高位功能正在抬高相邻底盘。建议重点参考人格王国位次，而不是只看标题类型。",
+        })
+
+    if near_cross_monarch_types:
+        risks.append({
+            "title": "存在跨君主近邻候选",
+            "body": "有不同君主的候选类型与当前结果分数很接近。若本人长期自我认同或外部观察明显更接近近邻候选，应优先结合位次结构复核，而不是硬判单一类型。",
         })
 
     guard_takeover = (
@@ -253,14 +270,16 @@ def compute_scores(answers):
             "body": "你在极度受压时的强烈反应比较明显。它可能表现为对外决裂、强烈否定，也可能表现为自责或自我攻击。需要留意这类反应是否过早出现。",
         })
 
-    if monarch_gap >= 0.20 and branch_gap >= 0.15:
+    if overall_gap < 0.05 or near_cross_monarch_types:
+        confidence = "低"
+    elif monarch_gap >= 0.20 and branch_gap >= 0.15 and overall_gap >= 0.08:
         confidence = "高"
     elif monarch_gap >= 0.10 and branch_gap >= 0.08:
         confidence = "中"
     else:
         confidence = "低"
 
-    gap = min(monarch_gap, branch_gap)
+    gap = min(monarch_gap, branch_gap, overall_gap)
 
     return {
         "positions": pos,
@@ -280,6 +299,9 @@ def compute_scores(answers):
         "gap": gap,
         "monarch_gap": monarch_gap,
         "branch_gap": branch_gap,
+        "overall_gap": overall_gap,
+        "near_types": near_types,
+        "near_cross_monarch_types": near_cross_monarch_types,
         "map": m,
         "risks": risks,
     }
@@ -325,12 +347,17 @@ def build_report(result):
             "这说明有些压力可能已经被你过滤、隔离或转成了别的形式。"
         )
 
+    near_note = ""
+    near_types = result.get("near_types", [])[:3]
+    if near_types:
+        near_note = f"\n\n近邻候选包括：**{'、'.join(near_types)}**。这些类型与当前结果分数很接近，应结合王国位次一起看。"
+
     return f"""
 这次结果显示，你当前最接近：**{level} {t}**。
 
 {phase}
 
-整体来看，{chain}{latent_note}
+整体来看，{chain}{latent_note}{near_note}
 
 本次总体接近度为 **{d['score']:.2f}**，置信度为 **{result['confidence']}**。这次判型先看核心判断、反面压力和极端反应构成的主轴，再用做事方式和稳定方式确定底盘分支，最后再看解释方式判断高低位。
 """.strip()
