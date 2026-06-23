@@ -83,6 +83,8 @@ def compute_scores(answers):
     behavior_raw = {f: 0.0 for f in FUNCTIONS}
     behavior_max = {f: 0.0 for f in FUNCTIONS}
     behavior_values = {f: [] for f in FUNCTIONS}
+    hierarchy_raw = {t: 0.0 for t in TYPE_MAP}
+    hierarchy_max = {t: 0.0 for t in TYPE_MAP}
     high_count = 0
 
     for q in QUESTIONS:
@@ -103,6 +105,17 @@ def compute_scores(answers):
                     for key, value in option.get("scores", {}).items():
                         if key in FUNCTIONS:
                             behavior_raw[key] += value
+                continue
+
+            if module_key == "R":
+                for candidate in q.get("options", []):
+                    for key in candidate.get("scores", {}):
+                        if key in TYPE_MAP:
+                            hierarchy_max[key] += 1
+                if option:
+                    for key, value in option.get("scores", {}).items():
+                        if key in TYPE_MAP:
+                            hierarchy_raw[key] += value
                 continue
 
             for candidate in q.get("options", []):
@@ -166,6 +179,11 @@ def compute_scores(answers):
             behavior_scores[f] = 50.0
     behavior_centered = centered(behavior_scores)
 
+    hierarchy_scores = {}
+    for t in TYPE_MAP:
+        hierarchy_scores[t] = hierarchy_raw[t] / hierarchy_max[t] * 100 if hierarchy_max[t] else 50.0
+    hierarchy_centered = {t: hierarchy_scores[t] - 50.0 for t in TYPE_MAP}
+
     principle_base = {}
     principle_scores = {}
     for f in FUNCTIONS:
@@ -209,6 +227,7 @@ def compute_scores(answers):
         civilian_fit = 100 - behavior_scores[civilian]
         role_axis_bonus = _role_axis_bonus(chancellor, emperor, principle_scores)
         rank_penalty = _monarch_rank_penalty(monarch, ranks)
+        hierarchy_bonus = 0.12 * hierarchy_centered[type_name]
 
         score = (
             0.30 * principle_scores[monarch]
@@ -221,6 +240,7 @@ def compute_scores(answers):
             + 0.04 * behavior_scores[strategist]
             + 0.04 * principle_scores[marshal]
             + role_axis_bonus
+            + hierarchy_bonus
             - rank_penalty
         )
         type_scores[type_name] = score
@@ -252,6 +272,8 @@ def compute_scores(answers):
             "marshal_behavior": behavior_scores[marshal],
             "branch_score": branch_scores[type_name],
             "branch_score_centered": branch_scores_centered[type_name],
+            "hierarchy_score": hierarchy_scores[type_name],
+            "hierarchy_bonus": hierarchy_bonus,
             "core_type_score": score,
             "core_type_score_centered": 0.0,
             "role_axis_bonus": role_axis_bonus,
@@ -286,7 +308,7 @@ def compute_scores(answers):
     if ranks[top_monarch] > 4:
         risks.append({"title": "君主原则不在前列", "body": "当前最高候选的君主原则没有排进前四，说明结果可能被宰相、帝师或护卫等强位抬高，需要谨慎理解。"})
     if overall_gap < 2.5:
-        risks.append({"title": "近邻类型分数很接近", "body": "前几名王国模板分差距很小，建议结合八原则分、行为可用分和王国位次一起看。"})
+        risks.append({"title": "近邻类型分数很接近", "body": "前几名王国模板分差距很小，建议结合八原则分、行为轴分、主从题和王国位次一起看。"})
     if near_cross_monarch_types:
         risks.append({"title": "存在跨君主近邻候选", "body": "有不同君主的候选类型与当前结果接近，说明结构可能处在相邻王国边界。"})
     if d.get("civilian_behavior", 50) >= 70:
@@ -308,6 +330,8 @@ def compute_scores(answers):
         "mixed_scores": mixed_scores,
         "behavior_scores": behavior_scores,
         "behavior_centered": behavior_centered,
+        "hierarchy_scores": hierarchy_scores,
+        "hierarchy_centered": hierarchy_centered,
         "high_count": high_count,
         "chosen_monarch": top_monarch,
         "second_monarch": second_monarch,
@@ -360,5 +384,5 @@ def build_report(result):
 
 八原则前四为：**{top_principles}**。{near_note}
 
-本次王国模板分为 **{d['score']:.2f}**，置信度为 **{result['confidence']}**。v0.7.3 同时使用“原则偏好分”和“君主—子民轴行为分”：原则题主要判断王国核心，行为轴题主要帮助区分子民、护卫和宰相，避免把子民压力误当成稳定能力。
+本次王国模板分为 **{d['score']:.2f}**，置信度为 **{result['confidence']}**。v0.7.4 同时使用“原则偏好分”“君主—子民行为轴分”和“君主—宰相主从题”：原则题主要判断王国核心，行为轴题帮助区分子民压力，主从题判断同一组强功能里谁给谁合法性。
 """.strip()
