@@ -9,19 +9,19 @@ from data import QUESTIONS, TYPE_MAP, PRINCIPLES
 from scoring import compute_scores, build_report
 from backend import build_submission_row, save_submission
 
-st.set_page_config(page_title="神性论人格王国底盘测评 v0.4", page_icon="👑", layout="wide")
+st.set_page_config(page_title="神性论人格王国底盘测评 v0.5", page_icon="👑", layout="wide")
 
 if "submission_id" not in st.session_state:
     st.session_state["submission_id"] = str(uuid.uuid4())
 if "shuffle_seed" not in st.session_state:
     st.session_state["shuffle_seed"] = str(uuid.uuid4())
 
-st.title("神性论人格王国底盘测评 v0.4")
+st.title("神性论人格王国底盘测评 v0.5")
 st.caption("人格结构研究与自我理解工具｜非医学、非心理诊断")
 
 with st.expander("测评说明", expanded=True):
     st.markdown("""
-本测评只判定人格王国底盘、低位/高位、帝师气质、元帅反相与护卫风险提示。  
+本测评只判定人格王国底盘、低位/高位、帝师气质、元帅反相、护卫防御与子民压力提示。  
 不判登山、幸福、英雄、圣徒、超人、神魔或人生终局。
 
 量表说明：
@@ -32,8 +32,10 @@ with st.expander("测评说明", expanded=True):
 - 4 = 比较符合
 - 5 = 非常符合
 
-低位不是能力低，而是君主秩序正在建立，类似秦。  
-高位不是更激烈，而是君主已经坐稳，王国开始解释自身秩序，类似汉。
+低位不是能力低，而是帝师气质尚未显露，君主秩序正在建立。  
+高位不是更健康、更温和或更少风险，而是帝师气质已经显露，王国开始解释自身秩序。
+
+v0.5 会额外观察“主线—压力—防御—辩护—出兵/自毁”的动态链条：子民压力可能被护卫系统过滤、隔离、屏蔽或转译，因此显性子民分不高，并不一定代表该压力不存在。
 
 生成结果时，系统会默认记录本次答卷与计算结果，用于后续题库校准和模型改进。后台记录包含题目答案、各位次分数、最终结果、风险提示和可选 MBTI 对照；本页面不要求填写姓名、电话或联系方式。
 """)
@@ -50,7 +52,7 @@ for q in QUESTIONS:
 questions_by_section = {}
 for section in sections:
     section_items = [q for q in QUESTIONS if q["module"] == section]
-    rng = random.Random(f"shenxing-v04-{st.session_state['shuffle_seed']}-{section}")
+    rng = random.Random(f"shenxing-v05-{st.session_state['shuffle_seed']}-{section}")
     rng.shuffle(section_items)
     questions_by_section[section] = section_items
 
@@ -62,8 +64,12 @@ answers = {}
 tabs = st.tabs(sections)
 for tab, section in zip(tabs, sections):
     with tab:
+        if section.startswith("第二部分"):
+            st.info("本部分包含两种问题：别人如何刺痛你，以及你自己是否已经这样审判自己。请按真实反应作答。")
+        if section.startswith("第四部分"):
+            st.info("本部分测的是护卫防御方式：外界压力进入前，你通常如何隔离、过滤、屏蔽或转译它。")
         if section.startswith("第六部分"):
-            st.info("以下题目询问的是你曾经实际做过，或清晰、强烈地想做过的阴影处理方式。它不代表你道德上认同，也不代表你一定会实施，而是用于判断君主秩序被逼到极限时会调用哪一种元帅兵权。")
+            st.info("以下题目询问的是你曾经实际做过，或清晰、强烈地想做过的阴影处理方式。它不代表你道德上认同，也不代表你一定会实施。v0.5 同时包含对外出兵与向内自我清算。")
         for q in questions_by_section[section]:
             label = q["front_text"] if not show_ids else f"【{q['qid']}】{q['front_text']}"
             answers[q["qid"]] = st.radio(
@@ -155,7 +161,9 @@ if st.button("生成测评结果", type="primary"):
         "君主原始分": round(d["monarch_raw"], 3),
         "宰相分": round(d["chancellor"], 3),
         "护卫分": round(d["guard"], 3),
-        "子民分": round(d["civilian"], 3),
+        "子民显性分": round(d["civilian"], 3),
+        "潜在子民压力": round(d.get("latent_civilian", d["civilian"]), 3),
+        "子民计分证据": round(d.get("civilian_evidence", d["civilian"]), 3),
         "帝师分": round(d["emperor"], 3),
         "元帅分": round(d["marshal"], 3),
         "底盘分": round(d["score"], 3),
