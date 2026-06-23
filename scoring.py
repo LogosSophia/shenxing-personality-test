@@ -41,6 +41,15 @@ def centered(values):
     return {k: v - avg for k, v in values.items()}
 
 
+def _level_from_emperor(emperor_score, emperor_centered):
+    """帝师三档：绝对显露 + 相对突出，避免单纯高分/低分作答风格污染。"""
+    if emperor_score >= 4.00 and emperor_centered >= 0.15:
+        return "高位"
+    if emperor_score >= 3.75 or emperor_centered >= 0.30:
+        return "高位倾向"
+    return "低位"
+
+
 def compute_scores(answers):
     """answers: dict[qid] -> 1..5"""
     buckets = defaultdict(list)
@@ -82,6 +91,7 @@ def compute_scores(answers):
     civ_c = centered(civilian_evidence)
     ch_c = centered(chancellor_raw)
     guard_c = centered(guard_raw)
+    emperor_c = centered(emperor_raw)
     marshal_c = centered(marshal_raw)
 
     monarch_axis = {}
@@ -147,12 +157,15 @@ def compute_scores(answers):
             "monarch_axis_centered": monarch_axis_centered[monarch],
             "monarch_marshal": marshal_raw[MARSHAL_BY_MONARCH[monarch]],
             "chancellor": chancellor_score,
+            "chancellor_centered": ch_c[chancellor],
             "guard": guard_score,
+            "guard_centered": guard_c[guard],
             "civilian": civilian_score,
             "civilian_positive": core_positive[civilian],
             "civilian_aversion": core_aversion[civilian],
             "latent_civilian": max(civilian_score, guard_score - 0.50),
             "emperor": emperor_score,
+            "emperor_centered": emperor_c[emperor],
             "marshal": marshal_score,
             "branch_score": branch_score,
             "branch_score_centered": branch_score_centered,
@@ -184,8 +197,8 @@ def compute_scores(answers):
     d = detail[top_type]
     m = TYPE_MAP[top_type]
 
-    high = d["emperor"] >= 4.00
-    level = "高位" if high else "低位"
+    level = _level_from_emperor(d["emperor"], d["emperor_centered"])
+    is_high = level == "高位"
 
     risks = []
 
@@ -201,11 +214,13 @@ def compute_scores(answers):
             "body": "当前核心判断确定后，两个相邻底盘候选的做事方式和稳定方式差距不大，因此底盘分支需要谨慎理解。",
         })
 
-    guard_takeover = d["guard"] >= 4.30 and (
-        d["guard"] >= d["monarch_axis"] or d["guard"] - d["chancellor"] >= 0.50
+    guard_takeover = (
+        d["guard"] >= 4.30
+        and d["guard_centered"] >= 0.35
+        and d["guard_centered"] - d["chancellor_centered"] >= 0.35
     )
     if guard_takeover:
-        if high:
+        if is_high:
             risks.append({
                 "title": "稳定方式很强，可能形成高防御型结构",
                 "body": "你的稳定方式分数明显偏高。它能帮助你挡住外界冲击，但也可能让你更容易隔离、过滤或转译压力，使真实压力不容易直接被看见。",
@@ -291,6 +306,8 @@ def build_report(result):
 
     if level == "低位":
         phase = "这里的低位不是能力低，而是解释方式还没有充分显露：你的核心判断正在形成和巩固。"
+    elif level == "高位倾向":
+        phase = "这里的高位倾向不是更好或更成熟，而是解释方式已经开始显露，但还不宜直接判为稳定高位。"
     else:
         phase = "这里的高位不是更好、更健康或更温和，而是你已经会为自己的核心判断寻找一套解释。"
 
