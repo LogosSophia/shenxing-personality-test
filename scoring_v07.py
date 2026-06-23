@@ -80,22 +80,37 @@ def compute_scores(answers):
     direction_max = {f: 0.0 for f in FUNCTIONS}
     mixed_raw = {f: 0.0 for f in FUNCTIONS}
     mixed_appearances = {f: 0.0 for f in FUNCTIONS}
+    behavior_raw = {f: 0.0 for f in FUNCTIONS}
+    behavior_max = {f: 0.0 for f in FUNCTIONS}
     behavior_values = {f: [] for f in FUNCTIONS}
     high_count = 0
 
     for q in QUESTIONS:
         qid = q["qid"]
         qtype = q.get("question_type")
+        module_key = q.get("module_key")
         answer = answers.get(qid)
 
         if qtype == "pair":
-            for option in q.get("options", []):
-                for key in option.get("scores", {}):
+            option = _option_for(q, answer) if answer else None
+
+            if module_key == "B":
+                for candidate in q.get("options", []):
+                    for key in candidate.get("scores", {}):
+                        if key in FUNCTIONS:
+                            behavior_max[key] += 1
+                if option:
+                    for key, value in option.get("scores", {}).items():
+                        if key in FUNCTIONS:
+                            behavior_raw[key] += value
+                continue
+
+            for candidate in q.get("options", []):
+                for key in candidate.get("scores", {}):
                     if key in domains:
                         domain_max[key] += 1
                     elif key in FUNCTIONS:
                         direction_max[key] += 1
-            option = _option_for(q, answer) if answer else None
             if option:
                 for key, value in option.get("scores", {}).items():
                     if key in domains:
@@ -141,7 +156,14 @@ def compute_scores(answers):
         mixed_scores[f] = ((mixed_raw[f] + app) / (3 * app) * 100) if app else 50.0
         mixed_scores[f] = _clamp(mixed_scores[f])
 
-    behavior_scores = {f: mean(behavior_values[f]) if behavior_values[f] else 50.0 for f in FUNCTIONS}
+    behavior_scores = {}
+    for f in FUNCTIONS:
+        if behavior_max[f]:
+            behavior_scores[f] = behavior_raw[f] / behavior_max[f] * 100
+        elif behavior_values[f]:
+            behavior_scores[f] = mean(behavior_values[f])
+        else:
+            behavior_scores[f] = 50.0
     behavior_centered = centered(behavior_scores)
 
     principle_base = {}
@@ -184,8 +206,6 @@ def compute_scores(answers):
         adviser = SAME_DOMAIN_MIRROR[monarch]
         strategist = SAME_DOMAIN_MIRROR[guard]
 
-        # 子民位不再用“原则偏好低”判断，而重点看自然行为可用性是否低。
-        # 子民原则可能因压力/自我期望被打高；行为事实更能区分“压力”与“可用”。
         civilian_fit = 100 - behavior_scores[civilian]
         role_axis_bonus = _role_axis_bonus(chancellor, emperor, principle_scores)
         rank_penalty = _monarch_rank_penalty(monarch, ranks)
@@ -247,8 +267,7 @@ def compute_scores(answers):
     top_type = ordered_types[0]
     second_type = ordered_types[1]
     top_score = type_scores[top_type]
-    second_score = type_scores[second_type]
-    overall_gap = top_score - second_score
+    overall_gap = top_score - type_scores[second_type]
     m = TYPE_MAP[top_type]
     top_monarch = m["monarch"]
     second_monarch = next((TYPE_MAP[t]["monarch"] for t in ordered_types if TYPE_MAP[t]["monarch"] != top_monarch), top_monarch)
@@ -341,5 +360,5 @@ def build_report(result):
 
 八原则前四为：**{top_principles}**。{near_note}
 
-本次王国模板分为 **{d['score']:.2f}**，置信度为 **{result['confidence']}**。v0.7.2 同时使用“原则偏好分”和“自然行为可用分”：原则题主要判断王国核心，行为事实题主要帮助区分子民、护卫和宰相，避免把子民压力误当成稳定能力。
+本次王国模板分为 **{d['score']:.2f}**，置信度为 **{result['confidence']}**。v0.7.3 同时使用“原则偏好分”和“君主—子民轴行为分”：原则题主要判断王国核心，行为轴题主要帮助区分子民、护卫和宰相，避免把子民压力误当成稳定能力。
 """.strip()
