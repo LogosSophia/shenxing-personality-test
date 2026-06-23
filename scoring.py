@@ -58,11 +58,8 @@ def compute_scores(answers):
         marshal_score = pos[marshal]["Marshal"]
         emperor_score = pos[emperor]["EmperorTeacher"]
 
-        # v0.5: 子民压力可能被护卫压住。
-        # 显性子民分低，不一定代表子民压力低；若同一王国的护卫很高，说明压力可能已被过滤/转译。
+        # v0.5: 压力可能被稳定方式压住；显性压力低，不一定代表压力不存在。
         latent_civilian = max(civilian_score, guard_score - 0.50)
-
-        # 子民与元帅是定位证据，不应因过载而无限线性加分。
         civilian_evidence = min(latent_civilian, 4.20)
         marshal_evidence = min(marshal_score, 4.20)
 
@@ -93,7 +90,7 @@ def compute_scores(answers):
     d = detail[top_type]
     m = TYPE_MAP[top_type]
 
-    # 高低位只判帝师气质是否显露；护卫、子民、元帅不拦截高位，只进入变体/风险提示。
+    # 高低位只看解释方式是否显露。
     high = d["emperor"] >= 4.00
     level = "高位" if high else "低位"
 
@@ -105,42 +102,42 @@ def compute_scores(answers):
     if guard_takeover:
         if high:
             risks.append({
-                "title": "高位异型倾向：护卫型高位变体",
-                "body": "你的护卫功能分数明显偏高。高位不代表护卫不能强；相反，护卫过强可能形成一种高位变体：王国已经有解释自身秩序的能力，但守门结构可能开始改写王国的外在表现，使人格显得更稳定、克制、封闭或防御化。本结果不判定你已经成为异型，只提示：存在护卫型高位变体倾向。",
+                "title": "稳定方式很强，可能形成高防御型结构",
+                "body": "你的稳定方式分数明显偏高。它能帮助你挡住外界冲击，但也可能让你更容易隔离、过滤或转译压力，使真实压力不容易直接被看见。",
             })
         else:
             risks.append({
-                "title": "护卫强势，王位可能被防御结构遮蔽",
-                "body": "你的护卫功能分数明显偏高。低位阶段的护卫强势不直接称为异型；它更像是王位尚未完全显露时，守门结构过度用力，可能让人格看起来稳定、克制或成熟，但这种稳定未必来自君主连续统治。",
+                "title": "稳定方式偏强，核心判断可能被防御遮住",
+                "body": "你的稳定方式分数明显偏高。这不代表不好，但说明你在受压时可能先进入防御和稳定程序，而不是直接回到自己的核心判断。",
             })
 
     if d["civilian"] >= 4.50:
         if high:
             risks.append({
-                "title": "高位但子民裂口明显",
-                "body": "你的子民位分数明显偏高。高位说明帝师气质已经显露，但不代表子民追债消失。这个结果提示：你的王国已经能解释自身秩序，同时仍有一个低位原则强烈叩问王国，形成明显裂口。",
+                "title": "压力来源比较明显",
+                "body": "你的压力来源分数明显偏高。即使你已经能解释自己的核心判断，也仍然会被某类问题反复追问。",
             })
         else:
             risks.append({
-                "title": "子民追债过载",
-                "body": "你的子民位分数明显偏高。子民可以帮助定位王国结构，但过高时说明某个低位入口持续叩问王国，可能让君主需要不断证明自己、解释自己或防御自己。",
+                "title": "压力来源过载",
+                "body": "你的压力来源分数明显偏高。这说明某类问题会持续追问你，让你需要不断证明、解释或防御自己。",
             })
     elif d["latent_civilian"] >= 4.20 and d["guard"] >= 4.00 and d["civilian"] < 4.20:
         risks.append({
-            "title": "子民压力可能被护卫压住",
-            "body": "你的显性子民分不算过高，但护卫分较高，因此不能简单理解为子民压力很轻。更可能的情况是：低位压力已经被护卫系统隔离、过滤或转译，所以表面刺痛下降，但防御系统被迫升高。",
+            "title": "压力可能被稳定方式压住",
+            "body": "你的显性压力分不算过高，但稳定方式分较高。因此不能简单理解为压力很轻，更可能是压力已经被隔离、过滤或转成了别的形式。",
         })
 
     if d["marshal"] >= 4.50:
         if high:
             risks.append({
-                "title": "高位元帅强势，战时兵权明显",
-                "body": "你的元帅反相分数明显偏高。高位不代表元帅低，也不代表没有兵权；它说明帝师已经显露，但王国在极限处调用战时兵权的能力很强。需要进一步观察的是：这套兵权是否被帝师纳入解释和节制，还是容易过早出兵或转向自我清算。",
+                "title": "极端反应较强",
+                "body": "你在极度受压时的强烈反应比较明显。它可能表现为对外决裂、强烈否定，也可能表现为自责或自我攻击。需要留意这类反应是否过早出现。",
             })
         else:
             risks.append({
-                "title": "元帅过激，君主连续性容易被打断",
-                "body": "你的元帅反相分数明显偏高。低位阶段元帅过强，可能意味着王国在受压时容易过早进入截断、清算、决裂、现实撕开或自我定罪，使君主连续统治被战时兵权打断。",
+                "title": "极端反应容易打断自己",
+                "body": "你在极度受压时可能较快进入强烈否定、决裂、清算或自我攻击，使原本的核心判断难以连续稳定地运作。",
             })
 
     gap = top_score - second_score
@@ -168,11 +165,12 @@ def compute_scores(answers):
 
 def _chain_sentence(monarch, chancellor, guard, civilian, emperor, marshal):
     return (
-        f"你的主线偏向 **{monarch}：{ROLE_WORDS[monarch]}**；"
-        f"低位压力会从 **{civilian}：{ROLE_WORDS[civilian]}** 处追问你；"
-        f"你的护卫会用 **{guard}：{ROLE_WORDS[guard]}** 来隔离、过滤或转译压力；"
-        f"帝师则以 **{emperor}：{ROLE_WORDS[emperor]}** 为这条主线提供解释和辩护；"
-        f"极端时，元帅可能以 **{marshal}：{ROLE_WORDS[marshal]}** 的方式向外出兵，或转向自我清算。"
+        f"你的核心判断偏向 **{ROLE_WORDS[monarch]}**；"
+        f"做事时更容易依靠 **{ROLE_WORDS[chancellor]}**；"
+        f"压力常从 **{ROLE_WORDS[civilian]}** 处出现；"
+        f"你会用 **{ROLE_WORDS[guard]}** 来让自己稳定，或把压力处理成自己能承受的形式；"
+        f"你会用 **{ROLE_WORDS[emperor]}** 为自己的判断寻找解释；"
+        f"压力到极端时，**{ROLE_WORDS[marshal]}** 可能成为你的强烈反应。"
     )
 
 
@@ -181,7 +179,6 @@ def build_report(result):
     level = result["level"]
     m = result["map"]
     d = result["detail"][t]
-    p = PRINCIPLES
 
     monarch = m["monarch"]
     chancellor = m["chancellor"]
@@ -191,29 +188,25 @@ def build_report(result):
     marshal = m["marshal"]
 
     if level == "低位":
-        phase = "低位不是能力低，而是帝师气质尚未显露：王国正在建立君主连续统治，但还没有充分解释自身秩序。"
-        core_problem = f"当前核心问题是：{monarch} 君主如何连续坐稳王位，并等待 {emperor} 帝师气质显露。"
+        phase = "这里的低位不是能力低，而是解释方式还没有充分显露：你的核心判断正在形成和巩固。"
     else:
-        phase = "高位不是更激烈，也不是更温和，而是帝师气质已经显露：王国开始解释自身秩序。"
-        core_problem = f"当前核心问题不再只是 {monarch} 能不能统治，而是 {monarch} 王国如何经由 {emperor} 帝师解释自身合法性。"
+        phase = "这里的高位不是更好、更健康或更温和，而是你已经会为自己的核心判断寻找一套解释。"
 
     chain = _chain_sentence(monarch, chancellor, guard, civilian, emperor, marshal)
     latent_note = ""
     if d["latent_civilian"] > d["civilian"] + 0.25:
-        latent_note = f"\n\n注意：你的显性子民分为 {d['civilian']:.2f}，但结合护卫分后，潜在子民压力约为 {d['latent_civilian']:.2f}。这说明压力可能已经被护卫系统过滤或转译，不能只按表面子民分理解。"
+        latent_note = (
+            f"\n\n另外，你的显性压力分为 {d['civilian']:.2f}，"
+            f"但结合稳定方式后，隐藏压力指标约为 {d['latent_civilian']:.2f}。"
+            "这说明有些压力可能已经被你过滤、隔离或转成了别的形式。"
+        )
 
     return f"""
-你的人格王国测评结果为：**{level} {t}**。
+这次结果显示，你当前最接近：**{level} {t}**。
 
 {phase}
 
-你的王国以 **{monarch}——{p[monarch]}** 为君主，以 **{chancellor}——{p[chancellor]}** 为宰相，以 **{guard}——{p[guard]}** 为护卫，以 **{civilian}——{p[civilian]}** 为子民。帝师为 **{emperor}——{p[emperor]}**，元帅为 **{marshal}——{p[marshal]}**。
+整体来看，{chain}{latent_note}
 
-{core_problem}
-
-动态链条：{chain}{latent_note}
-
-本次底盘分为 **{d['score']:.2f}**，置信度为 **{result['confidence']}**。其中君主原始分 {d['monarch_raw']:.2f}，宰相分 {d['chancellor']:.2f}，护卫分 {d['guard']:.2f}，子民分 {d['civilian']:.2f}，潜在子民压力 {d['latent_civilian']:.2f}，帝师分 {d['emperor']:.2f}，元帅分 {d['marshal']:.2f}。
-
-最终判定：**当前最接近：{level} {t}**。
+本次总体接近度为 **{d['score']:.2f}**，置信度为 **{result['confidence']}**。如果置信度不是“高”，说明你和相邻结构之间有重叠，结果更适合理解为“当前最接近”，而不是绝对定型。
 """.strip()
