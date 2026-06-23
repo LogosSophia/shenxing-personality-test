@@ -47,7 +47,7 @@ for q in QUESTIONS:
 questions_by_section = {}
 for section in sections:
     section_items = [q for q in QUESTIONS if q["module"] == section]
-    rng = random.Random(f"shenxing-v06-axis-{st.session_state['shuffle_seed']}-{section}")
+    rng = random.Random(f"shenxing-v061-axis-{st.session_state['shuffle_seed']}-{section}")
     rng.shuffle(section_items)
     questions_by_section[section] = section_items
 
@@ -85,6 +85,28 @@ for tab, section in zip(tabs, sections):
 answered_count = sum(1 for value in answers.values() if value is not None)
 total_count = len(QUESTIONS)
 st.progress(answered_count / total_count, text=f"已作答 {answered_count}/{total_count} 题")
+
+with st.expander("题库导出", expanded=False):
+    question_df = pd.DataFrame([
+        {
+            "题号": q["qid"],
+            "部分": q["module"],
+            "位置": q["position"],
+            "功能": q["dimension"],
+            "关键词": q["principle"],
+            "题目": q["front_text"],
+            "计分键": q["scoring_key"],
+        }
+        for q in QUESTIONS
+    ])
+    st.download_button(
+        label="导出题库 CSV",
+        data=question_df.to_csv(index=False).encode("utf-8-sig"),
+        file_name="神性论人格王国测评题库_v0.6.1.csv",
+        mime="text/csv",
+        key="download_question_bank_csv",
+    )
+    st.caption("导出的题库按 data.py 原始顺序排列，不受页面随机打乱影响。")
 
 st.divider()
 st.subheader("非计分对照题")
@@ -163,16 +185,21 @@ if st.button("生成测评结果", type="primary"):
         detail_df = pd.DataFrame([{
             "核心正向": round(d["monarch_raw"], 3),
             "核心轴": round(d.get("monarch_axis", d["monarch_raw"]), 3),
+            "核心轴差": round(d.get("monarch_axis_centered", 0), 3),
             "元帅确认": round(d.get("monarch_marshal", d["marshal"]), 3),
             "做事方式": round(d["chancellor"], 3),
+            "做事方式差": round(d.get("chancellor_centered", 0), 3),
             "稳定方式": round(d["guard"], 3),
+            "稳定方式差": round(d.get("guard_centered", 0), 3),
             "反面压力": round(d["civilian"], 3),
             "反面正向拥抱": round(d.get("civilian_positive", 0), 3),
             "反面排斥": round(d.get("civilian_aversion", 0), 3),
             "隐藏压力指标": round(d.get("latent_civilian", d["civilian"]), 3),
             "解释方式": round(d["emperor"], 3),
+            "解释方式差": round(d.get("emperor_centered", 0), 3),
             "极端反应": round(d["marshal"], 3),
             "分支支持度": round(d.get("branch_score", 0), 3),
+            "分支差": round(d.get("branch_score_centered", 0), 3),
             "总体接近度": round(d["score"], 3),
             "置信度": result["confidence"],
         }])
