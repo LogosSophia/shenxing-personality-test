@@ -150,6 +150,7 @@ if st.button("生成测评结果", type="primary"):
                 "类型": candidate_type,
                 "核心轴": round(cd.get("monarch_axis", 0), 3),
                 "核心轴差": round(cd.get("monarch_axis_centered", 0), 3),
+                "元帅确认": round(cd.get("monarch_marshal", 0), 3),
                 "分支支持": round(cd.get("branch_score", 0), 3),
                 "分支差": round(cd.get("branch_score_centered", 0), 3),
                 "综合接近度": round(display_score, 3),
@@ -162,6 +163,7 @@ if st.button("生成测评结果", type="primary"):
         detail_df = pd.DataFrame([{
             "核心正向": round(d["monarch_raw"], 3),
             "核心轴": round(d.get("monarch_axis", d["monarch_raw"]), 3),
+            "元帅确认": round(d.get("monarch_marshal", d["marshal"]), 3),
             "做事方式": round(d["chancellor"], 3),
             "稳定方式": round(d["guard"], 3),
             "反面压力": round(d["civilian"], 3),
