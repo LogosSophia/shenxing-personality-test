@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
-from collections import defaultdict
-from data_v07 import QUESTIONS, TYPE_MAP, PRINCIPLES, FUNCTIONS, DOMAIN_OF, DOMAIN_NAMES, SAME_DOMAIN_MIRROR
+from data_v07 import QUESTIONS, TYPE_MAP, FUNCTIONS, DOMAIN_OF, SAME_DOMAIN_MIRROR
 
 ROLE_WORDS = {
     "Ti": "自洽、可理解、说得通",
@@ -57,10 +56,10 @@ def _monarch_rank_penalty(monarch, ranks):
     return 40.0
 
 
-def _level_from_high_questions(high_count, emperor_score):
-    if high_count >= 3 and emperor_score >= 65:
+def _level_from_high_questions(high_count):
+    if high_count >= 4:
         return "高位"
-    if high_count >= 2 or emperor_score >= 65:
+    if high_count >= 2:
         return "高位倾向"
     return "低位"
 
@@ -78,7 +77,6 @@ def compute_scores(answers):
     for q in QUESTIONS:
         qid = q["qid"]
         qtype = q.get("question_type")
-        module_key = q.get("module_key")
         answer = answers.get(qid)
 
         if qtype == "pair":
@@ -127,12 +125,14 @@ def compute_scores(answers):
         mixed_scores[f] = ((mixed_raw[f] + app) / (3 * app) * 100) if app else 50.0
         mixed_scores[f] = _clamp(mixed_scores[f])
 
+    # v0.7.1：域内取舍仍用于区分 i/e，但不再把另一侧打得过低。
+    # 原则分更多保留所属四域强度，以免 Ni/Ne、Ti/Te 等被机械排斥。
     principle_base = {}
     principle_scores = {}
     for f in FUNCTIONS:
         domain = DOMAIN_OF[f]
-        principle_base[f] = 0.65 * domain_scores[domain] + 0.35 * direction_scores[f]
-        principle_scores[f] = 0.60 * principle_base[f] + 0.40 * mixed_scores[f]
+        principle_base[f] = 0.75 * domain_scores[domain] + 0.25 * direction_scores[f]
+        principle_scores[f] = 0.70 * principle_base[f] + 0.30 * mixed_scores[f]
 
     principle_centered = centered(principle_scores)
     ranks, principle_order = _rank_map(principle_scores)
@@ -230,7 +230,7 @@ def compute_scores(answers):
     branch_gap = top_score - type_scores[second_same_monarch]
 
     d = detail[top_type]
-    level = _level_from_high_questions(high_count, d["emperor"])
+    level = _level_from_high_questions(high_count)
     near_types = [t for t in ordered_types[1:] if top_score - type_scores[t] <= 4.0]
     near_cross_monarch_types = [t for t in near_types if TYPE_MAP[t]["monarch"] != top_monarch]
 
@@ -308,5 +308,5 @@ def build_report(result):
 
 八原则前四为：**{top_principles}**。{near_note}
 
-本次王国模板分为 **{d['score']:.2f}**，置信度为 **{result['confidence']}**。v0.7 先根据四域强度、域内方向和八原则混战算出八大原则分，再将八原则分放入十六个王国模板中匹配；宰相、护卫、帝师等位次由结构推出，而不再让测试者直接自报。
+本次王国模板分为 **{d['score']:.2f}**，置信度为 **{result['confidence']}**。v0.7.1 先根据四域强度、自然取向和原则排序算出八大原则分，再将八原则分放入十六个王国模板中匹配。八原则分表示原则偏好强弱，不等于某个位次已经显露；高低位由第四部分单独判断。
 """.strip()
