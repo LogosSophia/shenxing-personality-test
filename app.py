@@ -15,6 +15,8 @@ if "submission_id" not in st.session_state:
     st.session_state["submission_id"] = str(uuid.uuid4())
 if "shuffle_seed" not in st.session_state:
     st.session_state["shuffle_seed"] = str(uuid.uuid4())
+if "current_section_index" not in st.session_state:
+    st.session_state["current_section_index"] = 0
 
 st.title("神性论人格王国测评")
 st.caption("人格结构研究与自我理解工具｜非医学、非心理诊断")
@@ -32,7 +34,7 @@ with st.expander("测评说明", expanded=True):
 - 4 = 比较符合
 - 5 = 非常符合
 
-第一部分会同时询问你自然喜欢、认可的东西，以及你最不喜欢被迫面对的状态。请尽量按真实经验作答，不需要选择“更好看”的答案。
+第一部分会同时询问你自然喜欢、认可的东西，以及你最不喜欢面对的状态。请尽量按真实经验作答，不需要选择“更好看”的答案。
 
 生成结果时，系统会默认记录本次匿名答卷与计算结果，用于后续题库校准和模型改进。本页面不要求填写姓名、电话或联系方式。
 """)
@@ -51,40 +53,82 @@ for section in sections:
     rng.shuffle(section_items)
     questions_by_section[section] = section_items
 
+
+def _go_to_section(index: int):
+    st.session_state["current_section_index"] = max(0, min(index, len(sections) - 1))
+    st.rerun()
+
+
+def _short_section_name(section: str) -> str:
+    if "：" in section:
+        return section.split("：", 1)[1]
+    return section
+
+
 st.divider()
 st.subheader("开始作答")
 st.caption("题目已自动打乱。所有题目均需作答。为避免默认值造成误判，本测评不会预先选择“3”。")
 
-answers = {}
-tabs = st.tabs(sections)
-for tab, section in zip(tabs, sections):
-    with tab:
-        if section.startswith("第一部分"):
-            st.info("这一部分同时包含两类题：你自然喜欢/认可什么，以及你最不喜欢被迫面对什么。")
-        if section.startswith("第三部分"):
-            st.info("这一部分关注你在压力下如何让自己稳定下来，或如何把外界压力处理成自己能承受的形式。")
-        if section.startswith("第五部分"):
-            st.info("这一部分关注人在极度受压时可能出现的强烈反应，包括对外决裂、强烈否定、自责或自我攻击。它不代表你一定会这样做，也不代表道德评价。")
-        for q in questions_by_section[section]:
-            label = q["front_text"] if not show_ids else f"【{q['qid']}】{q['front_text']}"
-            answers[q["qid"]] = st.radio(
-                label,
-                options=[1, 2, 3, 4, 5],
-                index=None,
-                horizontal=True,
-                key=q["qid"],
-                format_func=lambda x: {
-                    1: "1 完全不符合",
-                    2: "2 不太符合",
-                    3: "3 说不清",
-                    4: "4 比较符合",
-                    5: "5 非常符合",
-                }[x],
-            )
+current_idx = max(0, min(st.session_state["current_section_index"], len(sections) - 1))
+st.session_state["current_section_index"] = current_idx
+current_section = sections[current_idx]
 
-answered_count = sum(1 for value in answers.values() if value is not None)
+nav_cols = st.columns(len(sections))
+for i, section in enumerate(sections):
+    label = f"{i + 1}. {_short_section_name(section)}"
+    if i == current_idx:
+        nav_cols[i].button(label, disabled=True, use_container_width=True, key=f"nav_current_{i}")
+    elif nav_cols[i].button(label, use_container_width=True, key=f"nav_top_{i}"):
+        _go_to_section(i)
+
+st.markdown(f"### {current_idx + 1}/{len(sections)}　{current_section}")
+
+if current_section.startswith("第一部分"):
+    st.info("这一部分同时包含两类题：你自然喜欢/认可什么，以及你最不喜欢面对什么。")
+if current_section.startswith("第三部分"):
+    st.info("这一部分关注你在压力下如何让自己稳定下来，或如何把外界压力处理成自己能承受的形式。")
+if current_section.startswith("第五部分"):
+    st.info("这一部分关注人在极度受压时可能出现的强烈反应，包括对外决裂、强烈否定、自责或自我攻击。它不代表你一定会这样做，也不代表道德评价。")
+
+for q in questions_by_section[current_section]:
+    label = q["front_text"] if not show_ids else f"【{q['qid']}】{q['front_text']}"
+    st.radio(
+        label,
+        options=[1, 2, 3, 4, 5],
+        index=None,
+        horizontal=True,
+        key=q["qid"],
+        format_func=lambda x: {
+            1: "1 完全不符合",
+            2: "2 不太符合",
+            3: "3 说不清",
+            4: "4 比较符合",
+            5: "5 非常符合",
+        }[x],
+    )
+
+section_answered_count = sum(1 for q in questions_by_section[current_section] if st.session_state.get(q["qid"]) is not None)
+section_total_count = len(questions_by_section[current_section])
+st.caption(f"本部分已作答 {section_answered_count}/{section_total_count} 题")
+
+prev_col, progress_col, next_col = st.columns([1, 2, 1])
+with prev_col:
+    if current_idx > 0:
+        if st.button("上一页", use_container_width=True):
+            _go_to_section(current_idx - 1)
+    else:
+        st.button("上一页", disabled=True, use_container_width=True)
+with next_col:
+    if current_idx < len(sections) - 1:
+        if st.button("下一页", type="primary", use_container_width=True):
+            _go_to_section(current_idx + 1)
+    else:
+        st.button("已到最后一部分", disabled=True, use_container_width=True)
+
+answered_count = sum(1 for q in QUESTIONS if st.session_state.get(q["qid"]) is not None)
 total_count = len(QUESTIONS)
-st.progress(answered_count / total_count, text=f"已作答 {answered_count}/{total_count} 题")
+with progress_col:
+    st.progress(answered_count / total_count, text=f"总进度 {answered_count}/{total_count} 题")
 
 with st.expander("题库导出", expanded=False):
     question_df = pd.DataFrame([
@@ -117,6 +161,7 @@ with col2:
     mbti_self = st.text_input("你自认为最接近的 MBTI 类型是？", placeholder="例如 INTP")
 
 if st.button("生成测评结果", type="primary"):
+    answers = {q["qid"]: st.session_state.get(q["qid"]) for q in QUESTIONS}
     missing = [q["qid"] for q in QUESTIONS if answers.get(q["qid"]) is None]
     if missing:
         st.error(f"还有 {len(missing)} 题未作答。请完成全部题目后再生成结果。")
