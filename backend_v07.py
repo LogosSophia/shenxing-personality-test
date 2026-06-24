@@ -6,5 +6,5 @@ from backend import save_submission
 
 def build_submission_row(*args, **kwargs):
     row = _build_submission_row(*args, **kwargs)
-    row["schema_version"] = "v0.8-structure"
+    row["schema_version"] = "v0.8.1-pressure-collab"
     return row
