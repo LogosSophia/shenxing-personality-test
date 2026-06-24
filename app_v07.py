@@ -15,7 +15,7 @@ from data_v07 import (
     HIGH_PAIR_NAMES,
 )
 from scoring_v07 import compute_scores, build_report
-from backend import build_submission_row, save_submission
+from backend_v07 import build_submission_row, save_submission
 
 st.set_page_config(page_title="神性论人格王国测评", page_icon="👑", layout="wide")
 
