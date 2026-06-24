@@ -70,6 +70,11 @@ def _collab_key(f1, f2):
     return ""
 
 
+def _guard_viability(score):
+    """护卫不要求异常高；50 分以上视为可用，0 分才明显扣。"""
+    return max(0.0, min(100.0, score * 2.0))
+
+
 def _level_from_high_hits(hits):
     if hits >= 3:
         return "高位"
@@ -96,9 +101,9 @@ def _guard_status(score):
     return "护卫强"
 
 
-def _confidence(overall_gap, monarch_gap, branch_gap, monarch_score, chancellor_action):
+def _confidence(overall_gap, monarch_gap, branch_gap, monarch_score, chancellor_action, guard_viability):
     gap = min(overall_gap, monarch_gap, branch_gap)
-    if gap >= 10 and monarch_score >= 75 and chancellor_action >= 50:
+    if gap >= 10 and monarch_score >= 75 and chancellor_action >= 50 and guard_viability >= 50:
         return "高"
     if gap >= 5 and monarch_score >= 50 and chancellor_action >= 25:
         return "中"
@@ -211,8 +216,11 @@ def compute_scores(answers):
         high_key = HIGH_KEY_BY_DOMAIN[DOMAIN_OF[chancellor]]
         high_hits = int(high_raw.get(high_key, 0))
         high_fit = high_pair_scores.get(high_key, 0.0)
+        guard_viability = _guard_viability(behavior_scores[guard])
 
-        score = 0.62 * monarch_pair_fit + 0.38 * chancellor_action
+        # 主型：君主—子民轴定主权，宰相动作定组织方式，护卫可用度压低镜像误判。
+        # 护卫不要求很高；50 分已视为可用，但 0 分会明显削弱该王国。
+        score = 0.52 * monarch_pair_fit + 0.33 * chancellor_action + 0.15 * guard_viability
         type_scores[type_name] = score
         branch_scores[type_name] = chancellor_action
         branch_scores_centered[type_name] = chancellor_action - mean(collab_scores.values())
@@ -229,6 +237,7 @@ def compute_scores(answers):
             "chancellor_collab_key": collab_key,
             "guard": guard_pct,
             "guard_behavior": behavior_scores[guard],
+            "guard_viability": guard_viability,
             "guard_centered": guard_pct - 50.0,
             "guard_score_raw": guard_score,
             "guard_score_total": guard_total,
@@ -286,6 +295,8 @@ def compute_scores(answers):
     risks = []
     if d.get("monarch_behavior", 0) < 75:
         risks.append({"title": "君主轴不够明显", "body": "当前候选的君主—子民互斥轴没有拉开到很高，主型可能需要更多样本题确认。"})
+    if d.get("guard_viability", 0) < 50:
+        risks.append({"title": "护卫可用度偏低", "body": "当前候选王国的护卫在行为轴上偏低，若该项长期成立，可能说明镜像候选更稳，或护卫尚未成型。"})
     if branch_gap < 5.0:
         risks.append({"title": "宰相动作近邻", "body": "同一君主下的两个候选宰相分差较小，说明动作偏好还不够稳定。"})
     if overall_gap < 5.0:
@@ -297,7 +308,7 @@ def compute_scores(answers):
     elif guard_score <= 2:
         risks.append({"title": "护卫偏低", "body": "护卫防御机制分较低，说明子民压力可能更容易直接暴露，防御方式尚未稳定成型。"})
 
-    confidence = _confidence(overall_gap, monarch_gap, branch_gap, d.get("monarch_behavior", 0), d.get("chancellor", 0))
+    confidence = _confidence(overall_gap, monarch_gap, branch_gap, d.get("monarch_behavior", 0), d.get("chancellor", 0), d.get("guard_viability", 0))
 
     return {
         "positions": positions,
@@ -393,5 +404,5 @@ def build_report(result):
 
 君主—子民行为轴前四为：**{axis_order}**。{near_note}
 
-本次结构分为 **{d['score']:.2f}**，置信度为 **{result['confidence']}**。v0.8 主型只使用“君主—子民互斥行为轴”和“宰相动作偏好轴”；双高题只判断位阶，护卫题只判断防御机制与异型风险，不参与主型判定。
+本次结构分为 **{d['score']:.2f}**，置信度为 **{result['confidence']}**。v0.8 主型使用“君主—子民互斥行为轴”“宰相动作偏好轴”和“护卫可用度”共同压缩镜像误判；双高题只判断位阶，护卫题只判断防御机制与异型风险，不参与主型判定。
 """.strip()
