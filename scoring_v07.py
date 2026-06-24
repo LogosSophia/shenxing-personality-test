@@ -21,6 +21,15 @@ ROLE_WORDS = {
     "Fe": "关联、回应、关系成立",
 }
 
+ROLE_EXPLAINS = {
+    "monarch": "君主表示你以什么样的方式认识世界。",
+    "chancellor": "宰相表示你最顺的组织方式。",
+    "guard": "护卫表示你怎么处理冲突。",
+    "civilian": "子民表示压力更多从什么地方来。",
+    "emperor": "帝师表示你怎么解释你的秩序。",
+    "marshal": "元帅表示你最后的手段。",
+}
+
 COLLAB_KEYS = ["TN", "TS", "NF", "SF"]
 HIGH_KEYS = ["A", "B", "C", "D"]
 HIGH_KEY_BY_DOMAIN = {"T": "A", "F": "B", "N": "C", "S": "D"}
@@ -62,13 +71,19 @@ def _collab_key(f1, f2):
 
 
 def _level_from_high_hits(hits):
-    if hits >= 4:
-        return "高位很强"
     if hits >= 3:
-        return "高位明显"
+        return "高位"
     if hits >= 2:
         return "高位倾向"
-    return "普通位"
+    return "低位"
+
+
+def _variant_risk(score):
+    if score >= 7:
+        return "高"
+    if score >= 6:
+        return "中"
+    return "低"
 
 
 def _guard_status(score):
@@ -76,7 +91,9 @@ def _guard_status(score):
         return "护卫偏低"
     if score <= 5:
         return "护卫正常"
-    return "护卫强｜异型风险"
+    if score == 6:
+        return "护卫偏强"
+    return "护卫强"
 
 
 def _confidence(overall_gap, monarch_gap, branch_gap, monarch_score, chancellor_action):
@@ -260,6 +277,9 @@ def compute_scores(answers):
 
     d = detail[top_type]
     level = _level_from_high_hits(d.get("high_hits", 0))
+    variant_risk = _variant_risk(guard_score)
+    road = "未知"
+    ending = "未知"
     near_types = [t for t in ordered_types[1:] if top_score - type_scores[t] <= 5.0]
     near_cross_monarch_types = [t for t in near_types if TYPE_MAP[t]["monarch"] != top_monarch]
 
@@ -294,6 +314,9 @@ def compute_scores(answers):
         "guard_score": guard_score,
         "guard_total": guard_total,
         "guard_status": _guard_status(guard_score),
+        "variant_risk": variant_risk,
+        "road": road,
+        "ending": ending,
         "chosen_monarch": top_monarch,
         "second_monarch": second_monarch,
         "monarch_axis": principle_scores,
@@ -331,7 +354,6 @@ def _chain_sentence(monarch, chancellor, guard, civilian, emperor, marshal):
 
 def build_report(result):
     t = result["top_type"]
-    level = result["level"]
     m = result["map"]
     d = result["detail"][t]
     near_types = result.get("near_types", [])[:3]
@@ -343,13 +365,33 @@ def build_report(result):
     high_label = HIGH_PAIR_NAMES.get(high_key, high_key)
 
     return f"""
-这次结果显示，你当前最接近：**{level} {t}**。
+**人格王国：{t}**  
+**位阶：{result['level']}**  
+**异型风险：{result.get('variant_risk', '低')}**  
+**道路：{result.get('road', '未知')}**  
+**终局：{result.get('ending', '未知')}**
 
-整体来看，{_chain_sentence(m['monarch'], m['chancellor'], m['guard'], m['civilian'], m['emperor'], m['marshal'])}
+你的王国结构显示，你更接近 **{t}**。
 
-君主—子民行为轴前四为：**{axis_order}**。宰相动作通道为：**{collab_label}**。{near_note}
+**君主｜{m['monarch']}**  
+君主表示你以什么样的方式认识世界。你的核心认识方式更接近 **{m['monarch']}（{ROLE_WORDS[m['monarch']]}）**：你会自然从它出发判断世界、捕捉问题，并决定什么东西真正成立。
 
-双高协同：**{high_label}** 命中 **{d.get('high_hits', 0)}/4**。护卫防御机制：**{result.get('guard_score', 0)}/{result.get('guard_total', 8)}，{result.get('guard_status', '')}**。
+**宰相｜{m['chancellor']}**  
+宰相表示你最顺的组织方式。当你已经认定一件事重要之后，你更容易用 **{m['chancellor']}（{ROLE_WORDS[m['chancellor']]}）** 的方式把它组织起来、推进下去，或让它形成可运转的结构。本次宰相动作通道为：**{collab_label}**。
 
-本次结构分为 **{d['score']:.2f}**，置信度为 **{result['confidence']}**。v0.8 主型只使用“君主—子民互斥行为轴”和“宰相动作偏好轴”；双高题只判断高位倾向，护卫题只判断防御机制与异型风险，不参与主型判定。
+**护卫｜{m['guard']}**  
+护卫表示你怎么处理冲突。它不一定是你最喜欢的部分，但当压力逼近、局面失控、弱点被触碰时，你会倾向于用 **{m['guard']}（{ROLE_WORDS[m['guard']]}）** 来保护王国，让自己不被压力直接击穿。本次护卫防御机制为：**{result.get('guard_score', 0)}/{result.get('guard_total', 8)}，{result.get('guard_status', '')}**。
+
+**子民｜{m['civilian']}**  
+子民表示压力更多从什么地方来。你的压力裂口更容易出现在 **{m['civilian']}（{ROLE_WORDS[m['civilian']]}）** 所代表的方向：它可能不是你完全不在意的东西，反而常常是你想处理、想补上、但自然不顺的位置。
+
+**帝师｜{m['emperor']}**  
+帝师表示你怎么解释自己的秩序。当你需要把自己的判断说清楚、上升成一套更高层的解释时，**{m['emperor']}（{ROLE_WORDS[m['emperor']]}）** 可能作为你的解释方式或高位资源出现。本次双高协同为：**{high_label}**，命中 **{d.get('high_hits', 0)}/4**。
+
+**元帅｜{m['marshal']}**  
+元帅表示你最后的手段。它不是日常状态，而是在极端压力、王国秩序无法正常运转时，可能被调用出来的最后手段。
+
+君主—子民行为轴前四为：**{axis_order}**。{near_note}
+
+本次结构分为 **{d['score']:.2f}**，置信度为 **{result['confidence']}**。v0.8 主型只使用“君主—子民互斥行为轴”和“宰相动作偏好轴”；双高题只判断位阶，护卫题只判断防御机制与异型风险，不参与主型判定。
 """.strip()
