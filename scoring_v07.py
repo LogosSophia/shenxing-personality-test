@@ -1,16 +1,29 @@
 # -*- coding: utf-8 -*-
-from data_v07 import QUESTIONS, TYPE_MAP, FUNCTIONS, DOMAIN_OF, SAME_DOMAIN_MIRROR
+from data_v07 import (
+    QUESTIONS,
+    TYPE_MAP,
+    FUNCTIONS,
+    DOMAIN_OF,
+    DOMAIN_NAMES,
+    SAME_DOMAIN_MIRROR,
+    COLLAB_NAMES,
+    HIGH_PAIR_NAMES,
+)
 
 ROLE_WORDS = {
     "Ti": "自洽、可理解、说得通",
     "Te": "建构、目的、责任和结果",
-    "Ni": "涌现、压缩、方向和趋势",
-    "Ne": "创生、可能、新入口",
-    "Si": "守恒、稳定、延续",
-    "Se": "在场、现实、现场处理",
+    "Ni": "主线、收敛、终局感",
+    "Ne": "发散、可能、新入口",
+    "Si": "重复、不变、可复现的稳定基底",
+    "Se": "现场、即兴、现实反馈",
     "Fi": "本真、底线、自我统一",
     "Fe": "关联、回应、关系成立",
 }
+
+COLLAB_KEYS = ["TN", "TS", "NF", "SF"]
+HIGH_KEYS = ["A", "B", "C", "D"]
+HIGH_KEY_BY_DOMAIN = {"T": "A", "F": "B", "N": "C", "S": "D"}
 
 
 def mean(values):
@@ -21,10 +34,6 @@ def mean(values):
 def centered(values):
     avg = mean(values.values())
     return {k: v - avg for k, v in values.items()}
-
-
-def _clamp(value, low=0.0, high=100.0):
-    return max(low, min(high, value))
 
 
 def _option_for(q, key):
@@ -39,160 +48,111 @@ def _rank_map(scores):
     return {f: i + 1 for i, f in enumerate(ordered)}, ordered
 
 
-def _role_axis_bonus(chancellor, emperor, principle_scores):
-    if SAME_DOMAIN_MIRROR.get(chancellor) != emperor:
-        return 0.0
-    return max(0.0, min(principle_scores[chancellor], principle_scores[emperor]) - 60.0) * 0.16
+def _collab_key(f1, f2):
+    domains = {DOMAIN_OF[f1], DOMAIN_OF[f2]}
+    if domains == {"T", "N"}:
+        return "TN"
+    if domains == {"T", "S"}:
+        return "TS"
+    if domains == {"N", "F"}:
+        return "NF"
+    if domains == {"S", "F"}:
+        return "SF"
+    return ""
 
 
-def _monarch_rank_penalty(monarch, ranks):
-    rank = ranks[monarch]
-    if rank <= 4:
-        return 0.0
-    if rank == 5:
-        return 12.0
-    if rank == 6:
-        return 22.0
-    return 40.0
-
-
-def _level_from_high_questions(high_count):
-    if high_count >= 4:
-        return "高位"
-    if high_count >= 2:
+def _level_from_high_hits(hits):
+    if hits >= 4:
+        return "高位很强"
+    if hits >= 3:
+        return "高位明显"
+    if hits >= 2:
         return "高位倾向"
-    return "低位"
+    return "普通位"
 
 
-def _scale_to_score(value):
-    try:
-        value = float(value)
-    except (TypeError, ValueError):
-        return None
-    return _clamp((value - 1.0) / 4.0 * 100.0)
+def _guard_status(score):
+    if score <= 2:
+        return "护卫偏低"
+    if score <= 5:
+        return "护卫正常"
+    return "护卫强｜异型风险"
+
+
+def _confidence(overall_gap, monarch_gap, branch_gap, monarch_score, chancellor_action):
+    gap = min(overall_gap, monarch_gap, branch_gap)
+    if gap >= 10 and monarch_score >= 75 and chancellor_action >= 50:
+        return "高"
+    if gap >= 5 and monarch_score >= 50 and chancellor_action >= 25:
+        return "中"
+    return "低"
 
 
 def compute_scores(answers):
-    domains = ["T", "N", "S", "F"]
-    domain_raw = {d: 0.0 for d in domains}
-    domain_max = {d: 0.0 for d in domains}
-    direction_raw = {f: 0.0 for f in FUNCTIONS}
-    direction_max = {f: 0.0 for f in FUNCTIONS}
-    mixed_raw = {f: 0.0 for f in FUNCTIONS}
-    mixed_appearances = {f: 0.0 for f in FUNCTIONS}
-    behavior_raw = {f: 0.0 for f in FUNCTIONS}
-    behavior_max = {f: 0.0 for f in FUNCTIONS}
-    behavior_values = {f: [] for f in FUNCTIONS}
-    hierarchy_raw = {t: 0.0 for t in TYPE_MAP}
-    hierarchy_max = {t: 0.0 for t in TYPE_MAP}
-    high_count = 0
+    axis_raw = {f: 0.0 for f in FUNCTIONS}
+    axis_max = {f: 0.0 for f in FUNCTIONS}
+    collab_raw = {k: 0.0 for k in COLLAB_KEYS}
+    collab_total = 0.0
+    high_raw = {k: 0.0 for k in HIGH_KEYS}
+    high_total = 0.0
+    guard_score = 0
+    guard_total = 0
 
     for q in QUESTIONS:
         qid = q["qid"]
         qtype = q.get("question_type")
         module_key = q.get("module_key")
         answer = answers.get(qid)
+        option = _option_for(q, answer) if answer else None
 
-        if qtype == "pair":
-            option = _option_for(q, answer) if answer else None
-
-            if module_key == "B":
-                for candidate in q.get("options", []):
-                    for key in candidate.get("scores", {}):
-                        if key in FUNCTIONS:
-                            behavior_max[key] += 1
-                if option:
-                    for key, value in option.get("scores", {}).items():
-                        if key in FUNCTIONS:
-                            behavior_raw[key] += value
-                continue
-
-            if module_key == "R":
-                for candidate in q.get("options", []):
-                    for key in candidate.get("scores", {}):
-                        if key in TYPE_MAP:
-                            hierarchy_max[key] += 1
-                if option:
-                    for key, value in option.get("scores", {}).items():
-                        if key in TYPE_MAP:
-                            hierarchy_raw[key] += value
-                continue
-
+        if qtype == "pair" and module_key == "A":
             for candidate in q.get("options", []):
                 for key in candidate.get("scores", {}):
-                    if key in domains:
-                        domain_max[key] += 1
-                    elif key in FUNCTIONS:
-                        direction_max[key] += 1
+                    if key in FUNCTIONS:
+                        axis_max[key] += 1
             if option:
                 for key, value in option.get("scores", {}).items():
-                    if key in domains:
-                        domain_raw[key] += value
-                    elif key in FUNCTIONS:
-                        direction_raw[key] += value
-                    elif key == "high":
-                        high_count += int(value)
+                    if key in FUNCTIONS:
+                        axis_raw[key] += value
 
-        elif qtype == "best_worst":
-            for option in q.get("options", []):
-                principle = option.get("principle")
-                if principle in FUNCTIONS:
-                    mixed_appearances[principle] += 1
-            if isinstance(answer, dict):
-                best_option = _option_for(q, answer.get("best")) if answer.get("best") else None
-                worst_option = _option_for(q, answer.get("worst")) if answer.get("worst") else None
-                if best_option and best_option.get("principle") in FUNCTIONS:
-                    mixed_raw[best_option["principle"]] += 2
-                if worst_option and worst_option.get("principle") in FUNCTIONS:
-                    mixed_raw[worst_option["principle"]] -= 1
+        elif qtype == "single_choice" and module_key == "B":
+            collab_total += 1
+            if option:
+                for key, value in option.get("scores", {}).items():
+                    if key in collab_raw:
+                        collab_raw[key] += value
 
-        elif qtype == "scale":
-            score = _scale_to_score(answer)
-            if score is not None:
-                for f in q.get("scores", {}):
-                    if f in FUNCTIONS:
-                        behavior_values[f].append(score)
+        elif qtype == "single_choice" and module_key == "C":
+            high_total += 1
+            if option:
+                for key, value in option.get("scores", {}).items():
+                    if key in high_raw:
+                        high_raw[key] += value
 
-    domain_scores = {}
-    for d in domains:
-        max_count = domain_max[d] or 1
-        domain_scores[d] = _clamp(50 + (domain_raw[d] - max_count / 2) * (60 / max_count), 20, 80)
-
-    direction_scores = {}
-    for f in FUNCTIONS:
-        max_count = direction_max[f]
-        direction_scores[f] = (direction_raw[f] / max_count * 100) if max_count else 50.0
-
-    mixed_scores = {}
-    for f in FUNCTIONS:
-        app = mixed_appearances[f]
-        mixed_scores[f] = ((mixed_raw[f] + app) / (3 * app) * 100) if app else 50.0
-        mixed_scores[f] = _clamp(mixed_scores[f])
+        elif qtype == "pair" and module_key == "G":
+            guard_total += 1
+            if option:
+                guard_score += int(option.get("scores", {}).get("guard", 0))
 
     behavior_scores = {}
     for f in FUNCTIONS:
-        if behavior_max[f]:
-            behavior_scores[f] = behavior_raw[f] / behavior_max[f] * 100
-        elif behavior_values[f]:
-            behavior_scores[f] = mean(behavior_values[f])
-        else:
-            behavior_scores[f] = 50.0
+        behavior_scores[f] = axis_raw[f] / axis_max[f] * 100 if axis_max[f] else 50.0
     behavior_centered = centered(behavior_scores)
 
-    hierarchy_scores = {}
-    for t in TYPE_MAP:
-        hierarchy_scores[t] = hierarchy_raw[t] / hierarchy_max[t] * 100 if hierarchy_max[t] else 50.0
-    hierarchy_centered = {t: hierarchy_scores[t] - 50.0 for t in TYPE_MAP}
+    collab_scores = {k: (collab_raw[k] / collab_total * 100 if collab_total else 0.0) for k in COLLAB_KEYS}
+    high_pair_scores = {k: (high_raw[k] / high_total * 100 if high_total else 0.0) for k in HIGH_KEYS}
 
-    principle_base = {}
-    principle_scores = {}
-    for f in FUNCTIONS:
-        domain = DOMAIN_OF[f]
-        principle_base[f] = 0.75 * domain_scores[domain] + 0.25 * direction_scores[f]
-        principle_scores[f] = 0.70 * principle_base[f] + 0.30 * mixed_scores[f]
-
-    principle_centered = centered(principle_scores)
+    # v0.8 中，“principle_scores”作为兼容字段，实际含义是君主—子民行为轴分。
+    principle_scores = dict(behavior_scores)
+    principle_centered = dict(behavior_centered)
     ranks, principle_order = _rank_map(principle_scores)
+
+    domain_scores = {}
+    for domain in ["T", "N", "S", "F"]:
+        fs = [f for f in FUNCTIONS if DOMAIN_OF[f] == domain]
+        domain_scores[domain] = mean([behavior_scores[f] for f in fs])
+    direction_scores = dict(behavior_scores)
+    mixed_scores = {f: 50.0 for f in FUNCTIONS}
 
     positions = {
         f: {
@@ -213,6 +173,7 @@ def compute_scores(answers):
     type_scores = {}
     branch_scores = {}
     branch_scores_centered = {}
+    guard_pct = guard_score / guard_total * 100 if guard_total else 0.0
 
     for type_name, m in TYPE_MAP.items():
         monarch = m["monarch"]
@@ -224,60 +185,58 @@ def compute_scores(answers):
         adviser = SAME_DOMAIN_MIRROR[monarch]
         strategist = SAME_DOMAIN_MIRROR[guard]
 
-        civilian_fit = 100 - behavior_scores[civilian]
-        role_axis_bonus = _role_axis_bonus(chancellor, emperor, principle_scores)
-        rank_penalty = _monarch_rank_penalty(monarch, ranks)
-        hierarchy_bonus = 0.12 * hierarchy_centered[type_name]
+        collab_key = _collab_key(monarch, chancellor)
+        chancellor_action = collab_scores.get(collab_key, 0.0)
+        monarch_axis = behavior_scores[monarch]
+        civilian_behavior = behavior_scores[civilian]
+        civilian_fit = 100.0 - civilian_behavior
+        monarch_pair_fit = 0.70 * monarch_axis + 0.30 * civilian_fit
+        high_key = HIGH_KEY_BY_DOMAIN[DOMAIN_OF[chancellor]]
+        high_hits = int(high_raw.get(high_key, 0))
+        high_fit = high_pair_scores.get(high_key, 0.0)
 
-        score = (
-            0.30 * principle_scores[monarch]
-            + 0.16 * principle_scores[chancellor]
-            + 0.10 * behavior_scores[chancellor]
-            + 0.10 * behavior_scores[guard]
-            + 0.12 * principle_scores[emperor]
-            + 0.08 * civilian_fit
-            + 0.06 * principle_scores[adviser]
-            + 0.04 * behavior_scores[strategist]
-            + 0.04 * principle_scores[marshal]
-            + role_axis_bonus
-            + hierarchy_bonus
-            - rank_penalty
-        )
+        score = 0.62 * monarch_pair_fit + 0.38 * chancellor_action
         type_scores[type_name] = score
-        branch_scores[type_name] = 0.45 * principle_scores[chancellor] + 0.35 * behavior_scores[chancellor] + 0.20 * behavior_scores[guard]
-        branch_scores_centered[type_name] = 0.45 * principle_centered[chancellor] + 0.35 * behavior_centered[chancellor] + 0.20 * behavior_centered[guard]
+        branch_scores[type_name] = chancellor_action
+        branch_scores_centered[type_name] = chancellor_action - mean(collab_scores.values())
 
         detail[type_name] = {
-            "monarch_raw": principle_scores[monarch],
-            "monarch_axis": principle_scores[monarch],
-            "monarch_axis_centered": principle_centered[monarch],
-            "monarch_behavior": behavior_scores[monarch],
-            "monarch_marshal": principle_scores[marshal],
-            "chancellor": principle_scores[chancellor],
+            "monarch_raw": monarch_axis,
+            "monarch_axis": monarch_pair_fit,
+            "monarch_axis_centered": monarch_pair_fit - 50.0,
+            "monarch_behavior": monarch_axis,
+            "monarch_marshal": behavior_scores[marshal],
+            "chancellor": chancellor_action,
             "chancellor_behavior": behavior_scores[chancellor],
-            "chancellor_centered": principle_centered[chancellor],
-            "guard": principle_scores[guard],
+            "chancellor_centered": chancellor_action - mean(collab_scores.values()),
+            "chancellor_collab_key": collab_key,
+            "guard": guard_pct,
             "guard_behavior": behavior_scores[guard],
-            "guard_centered": principle_centered[guard],
-            "civilian": principle_scores[civilian],
-            "civilian_behavior": behavior_scores[civilian],
+            "guard_centered": guard_pct - 50.0,
+            "guard_score_raw": guard_score,
+            "guard_score_total": guard_total,
+            "guard_status": _guard_status(guard_score),
+            "civilian": civilian_fit,
+            "civilian_behavior": civilian_behavior,
             "civilian_fit": civilian_fit,
-            "civilian_positive": principle_scores[civilian],
-            "civilian_aversion": 100 - principle_scores[civilian],
-            "latent_civilian": principle_scores[civilian],
-            "emperor": principle_scores[emperor],
+            "civilian_positive": behavior_scores[civilian],
+            "civilian_aversion": 100.0 - behavior_scores[civilian],
+            "latent_civilian": behavior_scores[civilian],
+            "emperor": high_fit,
             "emperor_behavior": behavior_scores[emperor],
-            "emperor_centered": principle_centered[emperor],
-            "marshal": principle_scores[marshal],
+            "emperor_centered": high_fit - 50.0,
+            "emperor_high_key": high_key,
+            "high_hits": high_hits,
+            "marshal": behavior_scores[marshal],
             "marshal_behavior": behavior_scores[marshal],
             "branch_score": branch_scores[type_name],
             "branch_score_centered": branch_scores_centered[type_name],
-            "hierarchy_score": hierarchy_scores[type_name],
-            "hierarchy_bonus": hierarchy_bonus,
+            "hierarchy_score": 50.0,
+            "hierarchy_bonus": 0.0,
             "core_type_score": score,
             "core_type_score_centered": 0.0,
-            "role_axis_bonus": role_axis_bonus,
-            "monarch_rank_penalty": rank_penalty,
+            "role_axis_bonus": 0.0,
+            "monarch_rank_penalty": 0.0,
             "score": score,
         }
 
@@ -300,26 +259,25 @@ def compute_scores(answers):
     branch_gap = top_score - type_scores[second_same_monarch]
 
     d = detail[top_type]
-    level = _level_from_high_questions(high_count)
-    near_types = [t for t in ordered_types[1:] if top_score - type_scores[t] <= 4.0]
+    level = _level_from_high_hits(d.get("high_hits", 0))
+    near_types = [t for t in ordered_types[1:] if top_score - type_scores[t] <= 5.0]
     near_cross_monarch_types = [t for t in near_types if TYPE_MAP[t]["monarch"] != top_monarch]
 
     risks = []
-    if ranks[top_monarch] > 4:
-        risks.append({"title": "君主原则不在前列", "body": "当前最高候选的君主原则没有排进前四，说明结果可能被宰相、帝师或护卫等强位抬高，需要谨慎理解。"})
-    if overall_gap < 2.5:
-        risks.append({"title": "近邻类型分数很接近", "body": "前几名王国模板分差距很小，建议结合八原则分、行为轴分、主从题和王国位次一起看。"})
+    if d.get("monarch_behavior", 0) < 75:
+        risks.append({"title": "君主轴不够明显", "body": "当前候选的君主—子民互斥轴没有拉开到很高，主型可能需要更多样本题确认。"})
+    if branch_gap < 5.0:
+        risks.append({"title": "宰相动作近邻", "body": "同一君主下的两个候选宰相分差较小，说明动作偏好还不够稳定。"})
+    if overall_gap < 5.0:
+        risks.append({"title": "近邻类型分数很接近", "body": "前几名结构分差距较小，建议结合君主轴分和宰相动作分一起看。"})
     if near_cross_monarch_types:
-        risks.append({"title": "存在跨君主近邻候选", "body": "有不同君主的候选类型与当前结果接近，说明结构可能处在相邻王国边界。"})
-    if d.get("civilian_behavior", 50) >= 70:
-        risks.append({"title": "子民行为可用性偏高", "body": "当前候选的子民位行为可用分偏高，可能说明该类型并非最稳，或该子民位已经高度整合。"})
+        risks.append({"title": "存在跨君主近邻候选", "body": "有不同君主的候选类型与当前结果接近，说明君主轴可能处在边界。"})
+    if guard_score >= 6:
+        risks.append({"title": "护卫强，存在异型风险", "body": "护卫防御机制分较高，说明你可能已经形成明显防御方式，外显气质可能被护卫改写。"})
+    elif guard_score <= 2:
+        risks.append({"title": "护卫偏低", "body": "护卫防御机制分较低，说明子民压力可能更容易直接暴露，防御方式尚未稳定成型。"})
 
-    if overall_gap >= 5.0 and ranks[top_monarch] <= 3:
-        confidence = "高"
-    elif overall_gap >= 2.5 and ranks[top_monarch] <= 4:
-        confidence = "中"
-    else:
-        confidence = "低"
+    confidence = _confidence(overall_gap, monarch_gap, branch_gap, d.get("monarch_behavior", 0), d.get("chancellor", 0))
 
     return {
         "positions": positions,
@@ -330,9 +288,12 @@ def compute_scores(answers):
         "mixed_scores": mixed_scores,
         "behavior_scores": behavior_scores,
         "behavior_centered": behavior_centered,
-        "hierarchy_scores": hierarchy_scores,
-        "hierarchy_centered": hierarchy_centered,
-        "high_count": high_count,
+        "collab_scores": collab_scores,
+        "high_pair_scores": high_pair_scores,
+        "high_count": d.get("high_hits", 0),
+        "guard_score": guard_score,
+        "guard_total": guard_total,
+        "guard_status": _guard_status(guard_score),
         "chosen_monarch": top_monarch,
         "second_monarch": second_monarch,
         "monarch_axis": principle_scores,
@@ -375,14 +336,20 @@ def build_report(result):
     d = result["detail"][t]
     near_types = result.get("near_types", [])[:3]
     near_note = f"\n\n近邻候选包括：**{'、'.join(near_types)}**。" if near_types else ""
-    top_principles = "、".join(f"{f}({result['principle_scores'][f]:.1f})" for f in result.get("principle_order", [])[:4])
+    axis_order = "、".join(f"{f}({result['behavior_scores'][f]:.1f})" for f in result.get("principle_order", [])[:4])
+    collab_key = d.get("chancellor_collab_key", "")
+    collab_label = COLLAB_NAMES.get(collab_key, collab_key)
+    high_key = d.get("emperor_high_key", "")
+    high_label = HIGH_PAIR_NAMES.get(high_key, high_key)
 
     return f"""
 这次结果显示，你当前最接近：**{level} {t}**。
 
 整体来看，{_chain_sentence(m['monarch'], m['chancellor'], m['guard'], m['civilian'], m['emperor'], m['marshal'])}
 
-八原则前四为：**{top_principles}**。{near_note}
+君主—子民行为轴前四为：**{axis_order}**。宰相动作通道为：**{collab_label}**。{near_note}
 
-本次王国模板分为 **{d['score']:.2f}**，置信度为 **{result['confidence']}**。v0.7.4 同时使用“原则偏好分”“君主—子民行为轴分”和“君主—宰相主从题”：原则题主要判断王国核心，行为轴题帮助区分子民压力，主从题判断同一组强功能里谁给谁合法性。
+双高协同：**{high_label}** 命中 **{d.get('high_hits', 0)}/4**。护卫防御机制：**{result.get('guard_score', 0)}/{result.get('guard_total', 8)}，{result.get('guard_status', '')}**。
+
+本次结构分为 **{d['score']:.2f}**，置信度为 **{result['confidence']}**。v0.8 主型只使用“君主—子民互斥行为轴”和“宰相动作偏好轴”；双高题只判断高位倾向，护卫题只判断防御机制与异型风险，不参与主型判定。
 """.strip()
