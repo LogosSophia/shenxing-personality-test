@@ -5,7 +5,15 @@ import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
 
-from data_v07 import QUESTIONS, TYPE_MAP, PRINCIPLES, SAME_DOMAIN_MIRROR, DOMAIN_NAMES
+from data_v07 import (
+    QUESTIONS,
+    TYPE_MAP,
+    PRINCIPLES,
+    SAME_DOMAIN_MIRROR,
+    DOMAIN_NAMES,
+    COLLAB_NAMES,
+    HIGH_PAIR_NAMES,
+)
 from scoring_v07 import compute_scores, build_report
 from backend import build_submission_row, save_submission
 
@@ -32,11 +40,14 @@ def _answer_key(qid: str, suffix: str = "") -> str:
 
 
 def _is_answered(q, answer):
-    if q.get("question_type") == "pair":
+    qtype = q.get("question_type")
+    if qtype == "pair":
         return answer in ["A", "B"]
-    if q.get("question_type") == "best_worst":
+    if qtype == "single_choice":
+        return answer in [option.get("key") for option in q.get("options", [])]
+    if qtype == "best_worst":
         return isinstance(answer, dict) and answer.get("best") and answer.get("worst") and answer.get("best") != answer.get("worst")
-    if q.get("question_type") == "scale":
+    if qtype == "scale":
         return isinstance(answer, int) and 1 <= answer <= 5
     return answer is not None
 
@@ -45,19 +56,16 @@ def _sync_widget_answers():
     store = st.session_state["answers"]
     for q in QUESTIONS:
         qid = q["qid"]
-        if q.get("question_type") == "pair":
+        qtype = q.get("question_type")
+        if qtype in ["pair", "single_choice", "scale"]:
             widget_key = _answer_key(qid)
             if widget_key in st.session_state:
                 store[qid] = st.session_state.get(widget_key)
-        elif q.get("question_type") == "best_worst":
+        elif qtype == "best_worst":
             best_key = _answer_key(qid, "_best")
             worst_key = _answer_key(qid, "_worst")
             if best_key in st.session_state or worst_key in st.session_state:
                 store[qid] = {"best": st.session_state.get(best_key), "worst": st.session_state.get(worst_key)}
-        elif q.get("question_type") == "scale":
-            widget_key = _answer_key(qid)
-            if widget_key in st.session_state:
-                store[qid] = st.session_state.get(widget_key)
 
 
 def _short_section_name(section: str) -> str:
@@ -82,17 +90,16 @@ def _kingdom_role_rows(result):
     d = result["detail"][result["top_type"]]
     adviser = SAME_DOMAIN_MIRROR[m["monarch"]]
     strategist = SAME_DOMAIN_MIRROR[m["guard"]]
-    scores = result.get("principle_scores", {})
     behavior = result.get("behavior_scores", {})
     return [
-        {"王国位次": "君主", "结构面向": "核心原则", "功能": m["monarch"], "关键词": PRINCIPLES[m["monarch"]], "原则分": round(scores.get(m["monarch"], d.get("monarch_raw", 0)), 2), "行为轴分": round(behavior.get(m["monarch"], 0), 2), "补充": "君主主要看原则分与主从归属"},
-        {"王国位次": "宰相", "结构面向": "施政原则", "功能": m["chancellor"], "关键词": PRINCIPLES[m["chancellor"]], "原则分": round(d["chancellor"], 2), "行为轴分": round(d.get("chancellor_behavior", behavior.get(m["chancellor"], 0)), 2), "补充": "宰相需看是否服务君主"},
-        {"王国位次": "护卫", "结构面向": "稳定/守门", "功能": m["guard"], "关键词": PRINCIPLES[m["guard"]], "原则分": round(d["guard"], 2), "行为轴分": round(d.get("guard_behavior", behavior.get(m["guard"], 0)), 2), "补充": "护卫更看自然行为可用性"},
-        {"王国位次": "子民", "结构面向": "反面压力", "功能": m["civilian"], "关键词": PRINCIPLES[m["civilian"]], "原则分": round(d["civilian"], 2), "行为轴分": round(d.get("civilian_behavior", behavior.get(m["civilian"], 0)), 2), "补充": "子民压力可能抬高原则分；行为轴分低更符合子民位"},
-        {"王国位次": "谏臣", "结构面向": "君主镜像 / 提醒位", "功能": adviser, "关键词": PRINCIPLES[adviser], "原则分": round(scores.get(adviser, 0), 2), "行为轴分": round(behavior.get(adviser, 0), 2), "补充": "由君主镜像推定"},
-        {"王国位次": "帝师", "结构面向": f"解释方式 / {result['level']}", "功能": m["emperor"], "关键词": PRINCIPLES[m["emperor"]], "原则分": round(d["emperor"], 2), "行为轴分": round(d.get("emperor_behavior", behavior.get(m["emperor"], 0)), 2), "补充": f"高低位辅助题 B 数：{result.get('high_count', 0)}"},
-        {"王国位次": "谋士", "结构面向": "护卫镜像 / 隐性策略位", "功能": strategist, "关键词": PRINCIPLES[strategist], "原则分": round(scores.get(strategist, 0), 2), "行为轴分": round(behavior.get(strategist, 0), 2), "补充": "由护卫镜像推定"},
-        {"王国位次": "元帅", "结构面向": "极限手段", "功能": m["marshal"], "关键词": PRINCIPLES[m["marshal"]], "原则分": round(d["marshal"], 2), "行为轴分": round(d.get("marshal_behavior", behavior.get(m["marshal"], 0)), 2), "补充": "由王国模板推出，不直接询问极端反应"},
+        {"王国位次": "君主", "功能": m["monarch"], "关键词": PRINCIPLES[m["monarch"]], "主判来源": "君主—子民互斥轴", "分数": round(d.get("monarch_behavior", 0), 2), "补充": "自然发动的一端；其反面为子民"},
+        {"王国位次": "宰相", "功能": m["chancellor"], "关键词": PRINCIPLES[m["chancellor"]], "主判来源": COLLAB_NAMES.get(d.get("chancellor_collab_key", ""), "宰相动作"), "分数": round(d.get("chancellor", 0), 2), "补充": "君主确定后最自然的动作通道"},
+        {"王国位次": "护卫", "功能": m["guard"], "关键词": PRINCIPLES[m["guard"]], "主判来源": "由主型推出；护卫题只测强度", "分数": f"{result.get('guard_score', 0)}/{result.get('guard_total', 8)}", "补充": result.get("guard_status", "")},
+        {"王国位次": "子民", "功能": m["civilian"], "关键词": PRINCIPLES[m["civilian"]], "主判来源": "君主反面", "分数": round(100 - behavior.get(m["civilian"], 50), 2), "补充": "行为轴越低，越符合子民压力位"},
+        {"王国位次": "谏臣", "功能": adviser, "关键词": PRINCIPLES[adviser], "主判来源": "君主镜像", "分数": round(behavior.get(adviser, 0), 2), "补充": "由君主镜像推定"},
+        {"王国位次": "帝师", "功能": m["emperor"], "关键词": PRINCIPLES[m["emperor"]], "主判来源": HIGH_PAIR_NAMES.get(d.get("emperor_high_key", ""), "双高协同"), "分数": f"{d.get('high_hits', 0)}/4", "补充": f"{result['level']}；双高题不参与主型判定"},
+        {"王国位次": "谋士", "功能": strategist, "关键词": PRINCIPLES[strategist], "主判来源": "护卫镜像", "分数": round(behavior.get(strategist, 0), 2), "补充": "由护卫镜像推定"},
+        {"王国位次": "元帅", "功能": m["marshal"], "关键词": PRINCIPLES[m["marshal"]], "主判来源": "王国模板", "分数": round(behavior.get(m["marshal"], 0), 2), "补充": "由王国模板推出，不直接询问极端反应"},
     ]
 
 
@@ -105,14 +112,17 @@ def _go_to_section(index: int):
 
 _sync_widget_answers()
 
-st.title("神性论人格王国测评 v0.7")
-st.caption("八大结构原则取舍版｜非医学、非心理诊断")
+st.title("神性论人格王国测评 v0.8")
+st.caption("结构极简版｜君主—子民轴 + 宰相动作轴｜非医学、非心理诊断")
 
 with st.expander("测评说明", expanded=True):
     st.markdown("""
-本版从八大结构原则出发，并加入两个校正模块：**自然行为轴题**与**主从关系题**。
+本版先不使用抽象原则混战题和主从题，而是直接测结构位置：
 
-原则题主要判断你认为世界怎样才成立；行为轴题主要区分子民位压力与真正自然可用；主从题判断同一组强功能里谁给谁合法性。
+1. **君主—子民互斥行为轴**：判断你自然从哪里发动，以及哪一端更像压力位。  
+2. **宰相动作偏好轴**：判断君主确定之后，你最自然进入哪一种协作动作。  
+3. **双高协同题**：只用于判断高位倾向，不参与主型判定。  
+4. **护卫防御机制题**：只用于判断护卫强度与异型风险，不参与主型判定。
 """)
 
 sections = []
@@ -154,26 +164,29 @@ for i, section in enumerate(sections):
         _go_to_section(i)
 
 st.markdown(f"### {current_idx + 1}/{len(sections)}　{current_section}")
+if current_section.startswith("第一部分"):
+    st.info("这一部分只问自然行为轴，不要按理想中的自己作答；选你平时更自然靠近哪一端。")
+if current_section.startswith("第二部分"):
+    st.info("这一部分问动作偏好：当你已经认定一件事重要后，下一步自然怎么做。四个选项对应四种协作通道。")
 if current_section.startswith("第三部分"):
-    st.info("每题需要选两个，且不能相同。一个代表最优先，另一个代表相对可以先放一放。")
+    st.info("这一部分只判断宰相—帝师是否双高，不参与主型判定。")
 if current_section.startswith("第四部分"):
-    st.info("这一部分只问日常行为轴，不要按理想中的自己作答；选你平时更自然靠近哪一端。")
-if current_section.startswith("第五部分"):
-    st.info("这一部分问主从关系：不是问哪个能力更强，而是问哪个目的更根本、哪个手段服务哪个目的。")
+    st.info("这一部分只判断护卫防御机制。每题符合记 1 分；护卫是谁由前面的主型推出。")
 
 for q in questions_by_section[current_section]:
     qid = q["qid"]
     st.markdown(f"**{qid}. {q['front_text']}**")
     stored = st.session_state["answers"].get(qid)
     options = q.get("options", [])
+    qtype = q.get("question_type")
 
-    if q.get("question_type") == "pair":
+    if qtype in ["pair", "single_choice"]:
         labels = [_option_label(option) for option in options]
         keys = [option["key"] for option in options]
         selected = st.radio("选择更接近你的一个：", options=keys, index=keys.index(stored) if stored in keys else None, format_func=lambda key: labels[keys.index(key)], key=_answer_key(qid))
         st.session_state["answers"][qid] = selected
 
-    elif q.get("question_type") == "best_worst":
+    elif qtype == "best_worst":
         keys = [option["key"] for option in options]
         labels = [_option_label(option) for option in options]
         stored = stored if isinstance(stored, dict) else {}
@@ -187,7 +200,7 @@ for q in questions_by_section[current_section]:
         if best and worst and best == worst:
             st.warning("这一题的两个选择不能相同。")
 
-    elif q.get("question_type") == "scale":
+    elif qtype == "scale":
         scale_options = [1, 2, 3, 4, 5]
         selected = st.radio("这句话有多像你的日常事实？", options=scale_options, index=scale_options.index(stored) if stored in scale_options else None, format_func=lambda x: f"{x}｜{SCALE_LABELS[x]}", key=_answer_key(qid), horizontal=True)
         st.session_state["answers"][qid] = selected
@@ -222,7 +235,7 @@ with st.expander("题库导出", expanded=False):
         option_text = " / ".join(_option_label(option) for option in q.get("options", [])) if q.get("options") else "1—5：完全不像我—很像我"
         rows.append({"题号": q["qid"], "部分": q["module"], "题型": q["question_type"], "题目": q["front_text"], "选项": option_text})
     question_df = pd.DataFrame(rows)
-    st.download_button("导出题库 CSV", data=question_df.to_csv(index=False).encode("utf-8-sig"), file_name="神性论人格王国测评题库_v0.7.csv", mime="text/csv")
+    st.download_button("导出题库 CSV", data=question_df.to_csv(index=False).encode("utf-8-sig"), file_name="神性论人格王国测评题库_v0.8.csv", mime="text/csv")
 
 st.divider()
 st.subheader("非计分对照题")
@@ -237,7 +250,7 @@ if st.button("生成测评结果", type="primary"):
     answers = dict(st.session_state["answers"])
     missing = [q["qid"] for q in QUESTIONS if not _is_answered(q, answers.get(q["qid"]))]
     if missing:
-        st.error(f"还有 {len(missing)} 题未作答或混战题两个选择相同。请完成全部题目后再生成结果。")
+        st.error(f"还有 {len(missing)} 题未作答。请完成全部题目后再生成结果。")
         with st.expander("查看未完成题号"):
             st.write("、".join(missing))
         st.stop()
@@ -252,12 +265,19 @@ if st.button("生成测评结果", type="primary"):
     st.subheader("人格王国位次与分数")
     st.dataframe(pd.DataFrame(_kingdom_role_rows(result)), use_container_width=True, hide_index=True)
 
-    st.subheader("八原则分与行为轴分")
-    principle_rows = []
+    st.subheader("君主—子民行为轴")
+    axis_rows = []
     for f in result.get("principle_order", []):
         p = result["positions"][f]
-        principle_rows.append({"排名": int(p["Rank"]), "原则": f, "关键词": PRINCIPLES[f], "原则分": round(p["PrincipleScore"], 2), "行为轴分": round(p["BehaviorScore"], 2), "四域": DOMAIN_NAMES[p["Domain"]], "四域分": round(p["DomainScore"], 2), "域内分": round(p["DirectionScore"], 2), "混战分": round(p["MixedScore"], 2)})
-    st.dataframe(pd.DataFrame(principle_rows), use_container_width=True, hide_index=True)
+        axis_rows.append({"排名": int(p["Rank"]), "功能": f, "关键词": PRINCIPLES[f], "行为轴分": round(p["BehaviorScore"], 2), "四域": DOMAIN_NAMES[p["Domain"]]})
+    st.dataframe(pd.DataFrame(axis_rows), use_container_width=True, hide_index=True)
+
+    st.subheader("宰相动作、双高与护卫")
+    collab_rows = [{"协作通道": k, "名称": COLLAB_NAMES[k], "分数": round(v, 2)} for k, v in result.get("collab_scores", {}).items()]
+    st.dataframe(pd.DataFrame(collab_rows), use_container_width=True, hide_index=True)
+    high_rows = [{"双高项": k, "名称": HIGH_PAIR_NAMES[k], "命中率": round(v, 2)} for k, v in result.get("high_pair_scores", {}).items()]
+    st.dataframe(pd.DataFrame(high_rows), use_container_width=True, hide_index=True)
+    st.caption(f"护卫防御机制：{result.get('guard_score', 0)}/{result.get('guard_total', 8)}｜{result.get('guard_status', '')}")
 
     st.subheader("报告说明")
     st.markdown(report)
@@ -278,8 +298,18 @@ if st.button("生成测评结果", type="primary"):
         candidate_rows = []
         for candidate_type, display_score in result["ordered_types"]:
             cd = result["detail"][candidate_type]
-            candidate_rows.append({"类型": candidate_type, "王国模板分": round(display_score, 3), "君主": TYPE_MAP[candidate_type]["monarch"], "君主原则分": round(cd["monarch_raw"], 3), "宰相": TYPE_MAP[candidate_type]["chancellor"], "宰相行为轴分": round(cd.get("chancellor_behavior", 0), 3), "护卫": TYPE_MAP[candidate_type]["guard"], "护卫行为轴分": round(cd.get("guard_behavior", 0), 3), "子民": TYPE_MAP[candidate_type]["civilian"], "子民行为轴分": round(cd.get("civilian_behavior", 0), 3), "主从分": round(cd.get("hierarchy_score", 50), 3), "主从加权": round(cd.get("hierarchy_bonus", 0), 3), "君主排名惩罚": round(cd.get("monarch_rank_penalty", 0), 3)})
+            candidate_rows.append({
+                "类型": candidate_type,
+                "结构分": round(display_score, 3),
+                "君主": TYPE_MAP[candidate_type]["monarch"],
+                "君主轴分": round(cd.get("monarch_behavior", 0), 3),
+                "宰相": TYPE_MAP[candidate_type]["chancellor"],
+                "动作通道": cd.get("chancellor_collab_key", ""),
+                "宰相动作分": round(cd.get("chancellor", 0), 3),
+                "护卫": TYPE_MAP[candidate_type]["guard"],
+                "护卫分": f"{cd.get('guard_score_raw', 0)}/{cd.get('guard_score_total', 8)}",
+                "子民": TYPE_MAP[candidate_type]["civilian"],
+                "子民行为轴分": round(cd.get("civilian_behavior", 0), 3),
+                "双高命中": f"{cd.get('high_hits', 0)}/4",
+            })
         st.dataframe(pd.DataFrame(candidate_rows), use_container_width=True, hide_index=True)
-
-        st.subheader("四域分")
-        st.dataframe(pd.DataFrame([{"四域": k, "名称": DOMAIN_NAMES[k], "分数": round(v, 3)} for k, v in result.get("domain_scores", {}).items()]), use_container_width=True, hide_index=True)
