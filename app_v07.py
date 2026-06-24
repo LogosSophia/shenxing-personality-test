@@ -92,14 +92,14 @@ def _kingdom_role_rows(result):
     strategist = SAME_DOMAIN_MIRROR[m["guard"]]
     behavior = result.get("behavior_scores", {})
     return [
-        {"王国位次": "君主", "功能": m["monarch"], "关键词": PRINCIPLES[m["monarch"]], "主判来源": "君主—子民互斥轴", "分数": round(d.get("monarch_behavior", 0), 2), "补充": "自然发动的一端；其反面为子民"},
-        {"王国位次": "宰相", "功能": m["chancellor"], "关键词": PRINCIPLES[m["chancellor"]], "主判来源": COLLAB_NAMES.get(d.get("chancellor_collab_key", ""), "宰相动作"), "分数": round(d.get("chancellor", 0), 2), "补充": "君主确定后最自然的动作通道"},
-        {"王国位次": "护卫", "功能": m["guard"], "关键词": PRINCIPLES[m["guard"]], "主判来源": "由主型推出；护卫题只测强度", "分数": f"{result.get('guard_score', 0)}/{result.get('guard_total', 8)}", "补充": result.get("guard_status", "")},
-        {"王国位次": "子民", "功能": m["civilian"], "关键词": PRINCIPLES[m["civilian"]], "主判来源": "君主反面", "分数": round(100 - behavior.get(m["civilian"], 50), 2), "补充": "行为轴越低，越符合子民压力位"},
-        {"王国位次": "谏臣", "功能": adviser, "关键词": PRINCIPLES[adviser], "主判来源": "君主镜像", "分数": round(behavior.get(adviser, 0), 2), "补充": "由君主镜像推定"},
-        {"王国位次": "帝师", "功能": m["emperor"], "关键词": PRINCIPLES[m["emperor"]], "主判来源": HIGH_PAIR_NAMES.get(d.get("emperor_high_key", ""), "双高协同"), "分数": f"{d.get('high_hits', 0)}/4", "补充": f"{result['level']}；双高题不参与主型判定"},
-        {"王国位次": "谋士", "功能": strategist, "关键词": PRINCIPLES[strategist], "主判来源": "护卫镜像", "分数": round(behavior.get(strategist, 0), 2), "补充": "由护卫镜像推定"},
-        {"王国位次": "元帅", "功能": m["marshal"], "关键词": PRINCIPLES[m["marshal"]], "主判来源": "王国模板", "分数": round(behavior.get(m["marshal"], 0), 2), "补充": "由王国模板推出，不直接询问极端反应"},
+        {"王国位次": "君主", "含义": "以什么方式认识世界", "功能": m["monarch"], "关键词": PRINCIPLES[m["monarch"]], "主判来源": "君主—子民互斥轴", "分数": round(d.get("monarch_behavior", 0), 2), "补充": "自然发动的一端；其反面为子民"},
+        {"王国位次": "宰相", "含义": "最顺的组织方式", "功能": m["chancellor"], "关键词": PRINCIPLES[m["chancellor"]], "主判来源": COLLAB_NAMES.get(d.get("chancellor_collab_key", ""), "宰相动作"), "分数": round(d.get("chancellor", 0), 2), "补充": "君主确定后最自然的动作通道"},
+        {"王国位次": "护卫", "含义": "怎么处理冲突", "功能": m["guard"], "关键词": PRINCIPLES[m["guard"]], "主判来源": "由主型推出；护卫题只测强度", "分数": f"{result.get('guard_score', 0)}/{result.get('guard_total', 8)}", "补充": result.get("guard_status", "")},
+        {"王国位次": "子民", "含义": "压力更多从什么地方来", "功能": m["civilian"], "关键词": PRINCIPLES[m["civilian"]], "主判来源": "君主反面", "分数": round(100 - behavior.get(m["civilian"], 50), 2), "补充": "行为轴越低，越符合子民压力位"},
+        {"王国位次": "谏臣", "含义": "君主镜像 / 提醒位", "功能": adviser, "关键词": PRINCIPLES[adviser], "主判来源": "君主镜像", "分数": round(behavior.get(adviser, 0), 2), "补充": "由君主镜像推定"},
+        {"王国位次": "帝师", "含义": "怎么解释自己的秩序", "功能": m["emperor"], "关键词": PRINCIPLES[m["emperor"]], "主判来源": HIGH_PAIR_NAMES.get(d.get("emperor_high_key", ""), "双高协同"), "分数": f"{d.get('high_hits', 0)}/4", "补充": f"{result['level']}；双高题不参与主型判定"},
+        {"王国位次": "谋士", "含义": "护卫镜像 / 隐性策略位", "功能": strategist, "关键词": PRINCIPLES[strategist], "主判来源": "护卫镜像", "分数": round(behavior.get(strategist, 0), 2), "补充": "由护卫镜像推定"},
+        {"王国位次": "元帅", "含义": "最后的手段", "功能": m["marshal"], "关键词": PRINCIPLES[m["marshal"]], "主判来源": "王国模板", "分数": round(behavior.get(m["marshal"], 0), 2), "补充": "由王国模板推出，不直接询问极端反应"},
     ]
 
 
@@ -261,7 +261,13 @@ if st.button("生成测评结果", type="primary"):
     save_status = save_submission(submission_row)
 
     st.divider()
-    st.header(f"{result['level']} {result['top_type']}")
+    st.header(f"人格王国：{result['top_type']}")
+    summary_cols = st.columns(4)
+    summary_cols[0].metric("位阶", result.get("level", "未知"))
+    summary_cols[1].metric("异型风险", result.get("variant_risk", "低"))
+    summary_cols[2].metric("道路", result.get("road", "未知"))
+    summary_cols[3].metric("终局", result.get("ending", "未知"))
+
     st.subheader("人格王国位次与分数")
     st.dataframe(pd.DataFrame(_kingdom_role_rows(result)), use_container_width=True, hide_index=True)
 
