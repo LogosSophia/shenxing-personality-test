@@ -24,7 +24,7 @@ ROLE_WORDS = {
 ROLE_EXPLAINS = {
     "monarch": "君主表示你以什么样的方式认识世界。",
     "chancellor": "宰相表示你最顺的组织方式。",
-    "guard": "护卫表示你怎么处理冲突。",
+    "guard": "护卫表示你如何保护并维持自己的王国秩序。",
     "civilian": "子民表示压力更多从什么地方来。",
     "emperor": "帝师表示你怎么解释你的秩序。",
     "marshal": "元帅表示你最后的手段。",
@@ -32,6 +32,7 @@ ROLE_EXPLAINS = {
 
 COLLAB_KEYS = ["TN", "TS", "NF", "SF"]
 HIGH_KEYS = ["A", "B", "C", "D"]
+DOMAIN_KEYS = ["T", "N", "S", "F"]
 HIGH_KEY_BY_DOMAIN = {"T": "A", "F": "B", "N": "C", "S": "D"}
 
 
@@ -70,11 +71,6 @@ def _collab_key(f1, f2):
     return ""
 
 
-def _guard_viability(score):
-    """护卫不要求异常高；50 分以上视为可用，0 分才明显扣。"""
-    return max(0.0, min(100.0, score * 2.0))
-
-
 def _level_from_high_hits(hits):
     if hits >= 3:
         return "高位"
@@ -101,9 +97,9 @@ def _guard_status(score):
     return "护卫强"
 
 
-def _confidence(overall_gap, monarch_gap, branch_gap, monarch_score, chancellor_action, guard_viability, stress_action):
+def _confidence(overall_gap, monarch_gap, branch_gap, monarch_score, chancellor_action, high_fit, domain_fit):
     gap = min(overall_gap, monarch_gap, branch_gap)
-    if gap >= 10 and monarch_score >= 75 and chancellor_action >= 50 and guard_viability >= 50 and stress_action >= 50:
+    if gap >= 10 and monarch_score >= 75 and chancellor_action >= 50 and high_fit >= 50 and domain_fit >= 50:
         return "高"
     if gap >= 5 and monarch_score >= 50 and chancellor_action >= 25:
         return "中"
@@ -119,6 +115,8 @@ def compute_scores(answers):
     stress_total = 0.0
     high_raw = {k: 0.0 for k in HIGH_KEYS}
     high_total = 0.0
+    domain_raw = {k: 0.0 for k in DOMAIN_KEYS}
+    domain_total = 0.0
     guard_score = 0
     guard_total = 0
 
@@ -160,6 +158,13 @@ def compute_scores(answers):
                     if key in high_raw:
                         high_raw[key] += value
 
+        elif qtype == "single_choice" and module_key == "D":
+            domain_total += 1
+            if option:
+                for key, value in option.get("scores", {}).items():
+                    if key in domain_raw:
+                        domain_raw[key] += value
+
         elif qtype == "pair" and module_key == "G":
             guard_total += 1
             if option:
@@ -174,15 +179,16 @@ def compute_scores(answers):
     stress_scores = {k: (stress_raw[k] / stress_total * 100 if stress_total else 0.0) for k in COLLAB_KEYS}
     high_pair_scores = {k: (high_raw[k] / high_total * 100 if high_total else 0.0) for k in HIGH_KEYS}
 
+    behavior_domain_scores = {}
+    for domain in DOMAIN_KEYS:
+        fs = [f for f in FUNCTIONS if DOMAIN_OF[f] == domain]
+        behavior_domain_scores[domain] = mean([behavior_scores[f] for f in fs])
+    domain_scores = {k: (domain_raw[k] / domain_total * 100 if domain_total else behavior_domain_scores[k]) for k in DOMAIN_KEYS}
+
     # v0.8 中，“principle_scores”作为兼容字段，实际含义是君主—子民行为轴分。
     principle_scores = dict(behavior_scores)
     principle_centered = dict(behavior_centered)
     ranks, principle_order = _rank_map(principle_scores)
-
-    domain_scores = {}
-    for domain in ["T", "N", "S", "F"]:
-        fs = [f for f in FUNCTIONS if DOMAIN_OF[f] == domain]
-        domain_scores[domain] = mean([behavior_scores[f] for f in fs])
     direction_scores = dict(behavior_scores)
     mixed_scores = {f: 50.0 for f in FUNCTIONS}
 
@@ -229,10 +235,10 @@ def compute_scores(answers):
         high_key = HIGH_KEY_BY_DOMAIN[DOMAIN_OF[chancellor]]
         high_hits = int(high_raw.get(high_key, 0))
         high_fit = high_pair_scores.get(high_key, 0.0)
-        guard_viability = _guard_viability(behavior_scores[guard])
+        domain_fit = mean([domain_scores[DOMAIN_OF[monarch]], domain_scores[DOMAIN_OF[chancellor]]])
 
-        # 主型：君主—子民轴定主权，宰相动作定组织方式，护卫可用度压低镜像误判，压力协同负责镜像分流。
-        score = 0.45 * monarch_pair_fit + 0.30 * chancellor_action + 0.15 * guard_viability + 0.10 * stress_action
+        # 主型：君主—子民轴定主权，宰相动作定组织方式，双高协同定高位链条，四域底色做容错，压力协同只做轻分流。
+        score = 0.40 * monarch_pair_fit + 0.25 * chancellor_action + 0.20 * high_fit + 0.10 * domain_fit + 0.05 * stress_action
         type_scores[type_name] = score
         branch_scores[type_name] = chancellor_action
         branch_scores_centered[type_name] = chancellor_action - mean(collab_scores.values())
@@ -250,9 +256,11 @@ def compute_scores(answers):
             "chancellor_collab_key": collab_key,
             "stress_collab_key": stress_key,
             "stress_collab_score": stress_action,
+            "domain_fit": domain_fit,
+            "domain_monarch": domain_scores[DOMAIN_OF[monarch]],
+            "domain_chancellor": domain_scores[DOMAIN_OF[chancellor]],
             "guard": guard_pct,
             "guard_behavior": behavior_scores[guard],
-            "guard_viability": guard_viability,
             "guard_centered": guard_pct - 50.0,
             "guard_score_raw": guard_score,
             "guard_score_total": guard_total,
@@ -272,7 +280,7 @@ def compute_scores(answers):
             "marshal_behavior": behavior_scores[marshal],
             "branch_score": branch_scores[type_name],
             "branch_score_centered": branch_scores_centered[type_name],
-            "hierarchy_score": 50.0,
+            "hierarchy_score": high_fit,
             "hierarchy_bonus": 0.0,
             "core_type_score": score,
             "core_type_score_centered": 0.0,
@@ -310,28 +318,29 @@ def compute_scores(answers):
     risks = []
     if d.get("monarch_behavior", 0) < 75:
         risks.append({"title": "君主轴不够明显", "body": "当前候选的君主—子民互斥轴没有拉开到很高，主型可能需要更多样本题确认。"})
-    if d.get("guard_viability", 0) < 50:
-        risks.append({"title": "护卫可用度偏低", "body": "当前候选王国的护卫在行为轴上偏低，若该项长期成立，可能说明镜像候选更稳，或护卫尚未成型。"})
+    if d.get("domain_fit", 0) < 50:
+        risks.append({"title": "四域底色不支持", "body": "当前候选的君主域与宰相域在四域底色题中不够强，说明该候选可能只是单功能高分造成的近邻。"})
     if d.get("stress_collab_score", 0) < 50:
         risks.append({"title": "压力协同不典型", "body": "压力中的协同方式没有明显落在当前候选的君主—护卫组合上，镜像类型或异型结构需要留意。"})
     if branch_gap < 5.0:
         risks.append({"title": "宰相动作近邻", "body": "同一君主下的两个候选宰相分差较小，说明动作偏好还不够稳定。"})
     if overall_gap < 5.0:
-        risks.append({"title": "近邻类型分数很接近", "body": "前几名结构分差距较小，建议结合君主轴分、宰相动作分和压力协同分一起看。"})
+        risks.append({"title": "近邻类型分数很接近", "body": "前几名结构分差距较小，建议结合君主轴、宰相动作、双高协同和四域底色一起看。"})
     if near_cross_monarch_types:
         risks.append({"title": "存在跨君主近邻候选", "body": "有不同君主的候选类型与当前结果接近，说明君主轴可能处在边界。"})
     if guard_score >= 6:
-        risks.append({"title": "护卫强，存在异型风险", "body": "护卫防御机制分较高，说明你可能已经形成明显防御方式，外显气质可能被护卫改写。"})
+        risks.append({"title": "护卫强，存在异型风险", "body": "护卫维持机制分较高，说明你已经形成明显的保存、保险或隔离机制，外显气质可能被护卫改写。"})
     elif guard_score <= 2:
-        risks.append({"title": "护卫偏低", "body": "护卫防御机制分较低，说明子民压力可能更容易直接暴露，防御方式尚未稳定成型。"})
+        risks.append({"title": "护卫偏低", "body": "护卫维持机制分较低，说明保存、稳定、防漂移或隔离机制尚未稳定成型。"})
 
-    confidence = _confidence(overall_gap, monarch_gap, branch_gap, d.get("monarch_behavior", 0), d.get("chancellor", 0), d.get("guard_viability", 0), d.get("stress_collab_score", 0))
+    confidence = _confidence(overall_gap, monarch_gap, branch_gap, d.get("monarch_behavior", 0), d.get("chancellor", 0), d.get("emperor", 0), d.get("domain_fit", 0))
 
     return {
         "positions": positions,
         "principle_scores": principle_scores,
         "principle_order": principle_order,
         "domain_scores": domain_scores,
+        "behavior_domain_scores": behavior_domain_scores,
         "direction_scores": direction_scores,
         "mixed_scores": mixed_scores,
         "behavior_scores": behavior_scores,
@@ -389,6 +398,7 @@ def build_report(result):
     near_types = result.get("near_types", [])[:3]
     near_note = f"\n\n近邻候选包括：**{'、'.join(near_types)}**。" if near_types else ""
     axis_order = "、".join(f"{f}({result['behavior_scores'][f]:.1f})" for f in result.get("principle_order", [])[:4])
+    domain_order = "、".join(f"{k}({v:.1f})" for k, v in sorted(result.get("domain_scores", {}).items(), key=lambda item: item[1], reverse=True))
     collab_key = d.get("chancellor_collab_key", "")
     collab_label = COLLAB_NAMES.get(collab_key, collab_key)
     stress_key = d.get("stress_collab_key", "")
@@ -412,7 +422,7 @@ def build_report(result):
 宰相表示你最顺的组织方式。当你已经认定一件事重要之后，你更容易用 **{m['chancellor']}（{ROLE_WORDS[m['chancellor']]}）** 的方式把它组织起来、推进下去，或让它形成可运转的结构。本次宰相动作通道为：**{collab_label}**。
 
 **护卫｜{m['guard']}**  
-护卫表示你怎么处理冲突。它不一定是你最喜欢的部分，但当压力逼近、局面失控、弱点被触碰时，你会倾向于用 **{m['guard']}（{ROLE_WORDS[m['guard']]}）** 来保护王国，让自己不被压力直接击穿。本次护卫防御机制为：**{result.get('guard_score', 0)}/{result.get('guard_total', 8)}，{result.get('guard_status', '')}**。压力中的君主—护卫协同为：**{stress_label}**。
+护卫表示你如何保护并维持自己的王国秩序。它不只是防御冲突，也包括保存成果、稳定边界、承接压力、过滤风险，防止君主—宰相的运转被外部压力、内部漂移或未处理的裂口打断。本次护卫维持机制为：**{result.get('guard_score', 0)}/{result.get('guard_total', 8)}，{result.get('guard_status', '')}**。压力中的君主—护卫协同为：**{stress_label}**。
 
 **子民｜{m['civilian']}**  
 子民表示压力更多从什么地方来。你的压力裂口更容易出现在 **{m['civilian']}（{ROLE_WORDS[m['civilian']]}）** 所代表的方向：它可能不是你完全不在意的东西，反而常常是你想处理、想补上、但自然不顺的位置。
@@ -423,7 +433,7 @@ def build_report(result):
 **元帅｜{m['marshal']}**  
 元帅表示你最后的手段。它不是日常状态，而是在极端压力、王国秩序无法正常运转时，可能被调用出来的最后手段。
 
-君主—子民行为轴前四为：**{axis_order}**。{near_note}
+君主—子民行为轴前四为：**{axis_order}**。四域底色为：**{domain_order}**。{near_note}
 
-本次结构分为 **{d['score']:.2f}**，置信度为 **{result['confidence']}**。v0.8 主型使用“君主—子民互斥行为轴”“宰相动作偏好轴”“护卫可用度”和“压力协同分”共同压缩镜像误判；双高题只判断位阶，护卫题只判断防御机制与异型风险。
+本次结构分为 **{d['score']:.2f}**，置信度为 **{result['confidence']}**。v0.8 主型使用“君主—子民互斥行为轴”“宰相动作偏好轴”“双高协同”“四域底色”和轻量“压力协同分”共同判断；护卫题只判断护卫维持机制与异型风险。
 """.strip()
