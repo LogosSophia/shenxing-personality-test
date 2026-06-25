@@ -7,7 +7,6 @@ from data_v07 import (
     DOMAIN_NAMES,
     SAME_DOMAIN_MIRROR,
     COLLAB_NAMES,
-    HIGH_PAIR_NAMES,
 )
 
 ROLE_WORDS = {
@@ -31,9 +30,7 @@ ROLE_EXPLAINS = {
 }
 
 COLLAB_KEYS = ["TN", "TS", "NF", "SF"]
-HIGH_KEYS = ["A", "B", "C", "D"]
 DOMAIN_KEYS = ["T", "N", "S", "F"]
-HIGH_KEY_BY_DOMAIN = {"T": "A", "F": "B", "N": "C", "S": "D"}
 
 
 def mean(values):
@@ -71,14 +68,6 @@ def _collab_key(f1, f2):
     return ""
 
 
-def _level_from_high_hits(hits):
-    if hits >= 3:
-        return "高位"
-    if hits >= 2:
-        return "高位倾向"
-    return "低位"
-
-
 def _variant_risk(score):
     if score >= 7:
         return "高"
@@ -97,9 +86,22 @@ def _guard_status(score):
     return "护卫强"
 
 
-def _confidence(overall_gap, monarch_gap, branch_gap, role_legality, chancellor_action, high_fit, domain_fit):
+def _adviser_fit(monarch_behavior, adviser_behavior):
+    """谏臣是君主合法性的追问位：不宜太低，也不宜接近/压过君主。"""
+    if adviser_behavior >= monarch_behavior - 5:
+        return 35.0
+    if 20 <= adviser_behavior <= 60:
+        return 100.0
+    if adviser_behavior < 20:
+        return 75.0
+    if adviser_behavior <= 75:
+        return 85.0
+    return 55.0
+
+
+def _confidence(overall_gap, monarch_gap, branch_gap, role_legality, chancellor_action, domain_fit):
     gap = min(overall_gap, monarch_gap, branch_gap)
-    if gap >= 10 and role_legality >= 75 and chancellor_action >= 50 and high_fit >= 50 and domain_fit >= 50:
+    if gap >= 10 and role_legality >= 75 and chancellor_action >= 50 and domain_fit >= 45:
         return "高"
     if gap >= 5 and role_legality >= 60 and chancellor_action >= 25:
         return "中"
@@ -113,8 +115,6 @@ def compute_scores(answers):
     collab_total = 0.0
     stress_raw = {k: 0.0 for k in COLLAB_KEYS}
     stress_total = 0.0
-    high_raw = {k: 0.0 for k in HIGH_KEYS}
-    high_total = 0.0
     domain_raw = {k: 0.0 for k in DOMAIN_KEYS}
     domain_total = 0.0
     guard_score = 0
@@ -151,13 +151,6 @@ def compute_scores(answers):
                     if key in stress_raw:
                         stress_raw[key] += value
 
-        elif qtype == "single_choice" and module_key == "C":
-            high_total += 1
-            if option:
-                for key, value in option.get("scores", {}).items():
-                    if key in high_raw:
-                        high_raw[key] += value
-
         elif qtype == "single_choice" and module_key == "D":
             domain_total += 1
             if option:
@@ -177,7 +170,6 @@ def compute_scores(answers):
 
     collab_scores = {k: (collab_raw[k] / collab_total * 100 if collab_total else 0.0) for k in COLLAB_KEYS}
     stress_scores = {k: (stress_raw[k] / stress_total * 100 if stress_total else 0.0) for k in COLLAB_KEYS}
-    high_pair_scores = {k: (high_raw[k] / high_total * 100 if high_total else 0.0) for k in HIGH_KEYS}
 
     behavior_domain_scores = {}
     for domain in DOMAIN_KEYS:
@@ -231,25 +223,21 @@ def compute_scores(answers):
         monarch_behavior = behavior_scores[monarch]
         adviser_behavior = behavior_scores[adviser]
         civilian_behavior = behavior_scores[civilian]
-        adviser_suppression_fit = 100.0 - adviser_behavior
+        adviser_legality_fit = _adviser_fit(monarch_behavior, adviser_behavior)
         civilian_pressure_fit = 100.0 - civilian_behavior
 
-        # 王国合法性：君主应高；谏臣与子民/叛军一般不应高。
-        # 护卫、帝师、元帅可以高，所以不在这里扣分。
-        role_legality = 0.55 * monarch_behavior + 0.25 * civilian_pressure_fit + 0.20 * adviser_suppression_fit
+        # 第一部分只定君主—子民主轴：君主要高，子民要低；谏臣是合法性追问位，区间合理即可。
+        # 宰相、帝师、护卫、元帅不从第一部分直接定强弱，主要由后续动作/域/压力模块解释。
+        role_legality = 0.62 * monarch_behavior + 0.30 * civilian_pressure_fit + 0.08 * adviser_legality_fit
         illegal_high = mean([adviser_behavior, civilian_behavior])
 
-        high_key = HIGH_KEY_BY_DOMAIN[DOMAIN_OF[chancellor]]
-        high_hits = int(high_raw.get(high_key, 0))
-        high_fit = high_pair_scores.get(high_key, 0.0)
-
-        # 四域主要校验“君主域”。宰相域可由双高与动作题补足，不能反过来压死宰相。
+        # 四域主要校验“君主域”，宰相域由动作题补足。
         domain_monarch = domain_scores[DOMAIN_OF[monarch]]
         domain_chancellor = domain_scores[DOMAIN_OF[chancellor]]
         domain_fit = 0.70 * domain_monarch + 0.30 * domain_chancellor
 
-        # 主型：角色合法性定主权，宰相动作定组织方式，双高协同定宰相—帝师链条，四域校验君主域，压力协同只轻量分流。
-        score = 0.40 * role_legality + 0.22 * chancellor_action + 0.22 * high_fit + 0.11 * domain_fit + 0.05 * stress_action
+        # v0.8.4：不再测高位；主型只由君主—子民合法性、宰相动作、四域底色、压力协同判断。
+        score = 0.50 * role_legality + 0.30 * chancellor_action + 0.15 * domain_fit + 0.05 * stress_action
         type_scores[type_name] = score
         branch_scores[type_name] = chancellor_action
         branch_scores_centered[type_name] = chancellor_action - mean(collab_scores.values())
@@ -260,9 +248,9 @@ def compute_scores(answers):
             "monarch_axis": role_legality,
             "monarch_axis_centered": role_legality - 50.0,
             "monarch_behavior": monarch_behavior,
-            "adviser": adviser_suppression_fit,
+            "adviser": adviser_legality_fit,
             "adviser_behavior": adviser_behavior,
-            "adviser_suppression_fit": adviser_suppression_fit,
+            "adviser_suppression_fit": adviser_legality_fit,
             "illegal_high": illegal_high,
             "monarch_marshal": behavior_scores[marshal],
             "chancellor": chancellor_action,
@@ -286,21 +274,24 @@ def compute_scores(answers):
             "civilian_positive": behavior_scores[civilian],
             "civilian_aversion": civilian_pressure_fit,
             "latent_civilian": behavior_scores[civilian],
-            "emperor": high_fit,
+            "emperor": behavior_scores[emperor],
             "emperor_behavior": behavior_scores[emperor],
-            "emperor_centered": high_fit - 50.0,
-            "emperor_high_key": high_key,
-            "high_hits": high_hits,
+            "emperor_centered": behavior_scores[emperor] - 50.0,
+            "emperor_high_key": "",
+            "high_hits": 0,
             "marshal": behavior_scores[marshal],
             "marshal_behavior": behavior_scores[marshal],
             "branch_score": branch_scores[type_name],
             "branch_score_centered": branch_scores_centered[type_name],
-            "hierarchy_score": high_fit,
+            "hierarchy_score": 0.0,
             "hierarchy_bonus": 0.0,
             "core_type_score": score,
             "core_type_score_centered": 0.0,
             "role_axis_bonus": 0.0,
             "monarch_rank_penalty": illegal_high,
+            "adviser_legality_fit": adviser_legality_fit,
+            "strategist": strategist,
+            "strategist_behavior": behavior_scores[strategist],
             "score": score,
         }
 
@@ -323,7 +314,7 @@ def compute_scores(answers):
     branch_gap = top_score - type_scores[second_same_monarch]
 
     d = detail[top_type]
-    level = _level_from_high_hits(d.get("high_hits", 0))
+    level = "未知"
     variant_risk = _variant_risk(guard_score)
     road = "未知"
     ending = "未知"
@@ -333,8 +324,14 @@ def compute_scores(answers):
     risks = []
     if d.get("monarch_behavior", 0) < 75:
         risks.append({"title": "君主轴不够明显", "body": "当前候选的君主行为轴没有拉开到很高，主型可能需要更多样本题确认。"})
-    if d.get("illegal_high", 0) >= 50:
-        risks.append({"title": "谏臣/子民异常偏高", "body": "当前候选的谏臣或子民位偏高，说明可能存在单功能高分误读、镜像近邻或异型结构。"})
+    if d.get("civilian_behavior", 0) >= 50:
+        risks.append({"title": "子民位不够低", "body": "当前候选的子民行为轴没有明显压低，说明压力位可能尚未拉开，或主型存在近邻误差。"})
+    adviser_behavior = d.get("adviser_behavior", 50)
+    monarch_behavior = d.get("monarch_behavior", 50)
+    if adviser_behavior < 15:
+        risks.append({"title": "谏臣偏低", "body": "谏臣是追问君主合法性的镜像位。偏低不必然否定主型，但可能说明合法性审查尚未显形。"})
+    elif adviser_behavior >= monarch_behavior - 5 or adviser_behavior > 80:
+        risks.append({"title": "谏臣偏高", "body": "谏臣接近或压过君主时，可能出现镜像反压、主型边界或高整合样本，需要结合宰相动作和四域再判断。"})
     if d.get("domain_monarch", 0) < 50:
         risks.append({"title": "君主域底色不支持", "body": "当前候选的君主所在四域底色不够强，说明这个君主可能只是单功能高分，而不是稳定主权。"})
     if d.get("stress_collab_score", 0) < 50:
@@ -342,7 +339,7 @@ def compute_scores(answers):
     if branch_gap < 5.0:
         risks.append({"title": "宰相动作近邻", "body": "同一君主下的两个候选宰相分差较小，说明动作偏好还不够稳定。"})
     if overall_gap < 5.0:
-        risks.append({"title": "近邻类型分数很接近", "body": "前几名结构分差距较小，建议结合角色合法性、宰相动作、双高协同和四域底色一起看。"})
+        risks.append({"title": "近邻类型分数很接近", "body": "前几名结构分差距较小，建议结合君主—子民轴、宰相动作、四域底色和压力协同一起看。"})
     if near_cross_monarch_types:
         risks.append({"title": "存在跨君主近邻候选", "body": "有不同君主的候选类型与当前结果接近，说明君主轴可能处在边界。"})
     if guard_score >= 6:
@@ -350,7 +347,7 @@ def compute_scores(answers):
     elif guard_score <= 2:
         risks.append({"title": "护卫偏低", "body": "护卫维持机制分较低，说明保存、稳定、防漂移或隔离机制尚未稳定成型。"})
 
-    confidence = _confidence(overall_gap, monarch_gap, branch_gap, d.get("monarch_axis", 0), d.get("chancellor", 0), d.get("emperor", 0), d.get("domain_fit", 0))
+    confidence = _confidence(overall_gap, monarch_gap, branch_gap, d.get("monarch_axis", 0), d.get("chancellor", 0), d.get("domain_fit", 0))
 
     return {
         "positions": positions,
@@ -364,8 +361,8 @@ def compute_scores(answers):
         "behavior_centered": behavior_centered,
         "collab_scores": collab_scores,
         "stress_scores": stress_scores,
-        "high_pair_scores": high_pair_scores,
-        "high_count": d.get("high_hits", 0),
+        "high_pair_scores": {},
+        "high_count": 0,
         "guard_score": guard_score,
         "guard_total": guard_total,
         "guard_status": _guard_status(guard_score),
@@ -420,8 +417,6 @@ def build_report(result):
     collab_label = COLLAB_NAMES.get(collab_key, collab_key)
     stress_key = d.get("stress_collab_key", "")
     stress_label = COLLAB_NAMES.get(stress_key, stress_key)
-    high_key = d.get("emperor_high_key", "")
-    high_label = HIGH_PAIR_NAMES.get(high_key, high_key)
 
     return f"""
 **人格王国：{t}**  
@@ -445,12 +440,12 @@ def build_report(result):
 子民表示压力更多从什么地方来。你的压力裂口更容易出现在 **{m['civilian']}（{ROLE_WORDS[m['civilian']]}）** 所代表的方向。这里的子民分是反向压力分：该功能行为轴越低，子民符合度越高。
 
 **帝师｜{m['emperor']}**  
-帝师表示你怎么解释自己的秩序。当你需要把自己的判断说清楚、上升成一套更高层的解释时，**{m['emperor']}（{ROLE_WORDS[m['emperor']]}）** 可能作为你的解释方式或高位资源出现。本次双高协同为：**{high_label}**，命中 **{d.get('high_hits', 0)}/4**。
+帝师表示你怎么解释自己的秩序。当前版本不再用题目直接测高位或双高，帝师主要由王国模板推出，并作为解释资源观察。
 
 **元帅｜{m['marshal']}**  
 元帅表示你最后的手段。它不是日常状态，而是在极端压力、王国秩序无法正常运转时，可能被调用出来的最后手段。
 
 君主—子民行为轴前四为：**{axis_order}**。四域底色为：**{domain_order}**。{near_note}
 
-本次结构分为 **{d['score']:.2f}**，置信度为 **{result['confidence']}**。v0.8 主型使用“角色合法性（君主高、谏臣与子民低）”“宰相动作偏好轴”“双高协同”“四域底色”和轻量“压力协同分”共同判断；护卫题只判断护卫维持机制与异型风险。
+本次结构分为 **{d['score']:.2f}**，置信度为 **{result['confidence']}**。v0.8.4 主型使用“君主—子民行为轴”“宰相动作偏好轴”“四域底色”和轻量“压力协同分”共同判断；第一部分只用于判断君主—子民主轴，不直接判定宰相、护卫、帝师或元帅强弱；高位暂不计分，统一显示为未知。
 """.strip()
